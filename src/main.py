@@ -1,19 +1,24 @@
 """
-Main entry point for FPL Optimizer.
+Main entry point for FPL Optimizer with advanced features.
 """
+import argparse
 from data.api_client import FPLAPIClient
 from data.models import build_gameweek_data
 from prediction.forecaster import PointForecaster
+from prediction.advanced_forecaster import AdvancedForecaster
 from optimization.squad_optimizer import SquadOptimizer
+from optimization.transfer_optimizer import TransferOptimizer
+from optimization.chip_strategy import ChipStrategyOptimizer
+from utils.config import get_config, UserTeamConfig
 
 
-def main():
-    """Run the FPL optimizer pipeline."""
+def run_basic_optimizer(config):
+    """Run basic optimization (original functionality)."""
     print("=" * 80)
-    print("FPL OPTIMIZER - Fantasy Premier League Squad Optimizer")
+    print("FPL OPTIMIZER - Basic Squad Optimization")
     print("=" * 80)
 
-    # Step 1: Fetch data from FPL API
+    # Fetch data
     print("\n[1/5] Fetching data from FPL API...")
     api_client = FPLAPIClient()
     gameweek_data = build_gameweek_data(api_client)
@@ -23,19 +28,21 @@ def main():
     print(f"  - Loaded {len(gameweek_data.fixtures)} upcoming fixtures")
     print(f"  - Current gameweek: {gameweek_data.current_gameweek}")
 
-    # Step 2: Predict player points
-    print("\n[2/5] Predicting player points based on form and fixtures...")
-    forecaster = PointForecaster(gameweek_data)
+    # Predict points
+    print(f"\n[2/5] Predicting player points (next {config.prediction_horizon} GWs)...")
 
-    # Predict for next 3 gameweeks
-    num_gameweeks = 3
+    if config.use_advanced_predictions:
+        forecaster = AdvancedForecaster(gameweek_data, api_client)
+        print("  - Using advanced prediction engine with historical data")
+    else:
+        forecaster = PointForecaster(gameweek_data)
+        print("  - Using basic prediction engine")
+
     expected_points = forecaster.get_predictions_for_all_players(
-        num_gameweeks=num_gameweeks
+        num_gameweeks=config.prediction_horizon
     )
 
-    print(f"  - Generated predictions for next {num_gameweeks} gameweeks")
-
-    # Show top predicted players by position
+    # Show top predictions
     print("\n  Top 3 predicted players by position:")
     for position in ['GK', 'DEF', 'MID', 'FWD']:
         position_players = [
@@ -54,22 +61,20 @@ def main():
             print(f"    {player.name:20} ({team.short_name}) - "
                   f"£{player.price}m - EP: {ep:.2f}")
 
-    # Step 3: Optimize squad
+    # Optimize squad
     print("\n[3/5] Optimizing squad selection...")
     optimizer = SquadOptimizer(gameweek_data)
-
     squad_result = optimizer.optimize_squad(expected_points, verbose=False)
 
     if not squad_result:
         print("ERROR: Squad optimization failed!")
-        return
+        return None
 
-    print(f"  - Squad optimized successfully!")
     print(f"  - Total expected points: {squad_result['total_expected_points']:.2f}")
     print(f"  - Total cost: £{squad_result['total_cost']:.1f}m")
 
-    # Step 4: Optimize starting XI
-    print("\n[4/5] Optimizing starting XI and captain selection...")
+    # Optimize starting XI
+    print("\n[4/5] Optimizing starting XI and captain...")
     starting_result = optimizer.optimize_starting_xi(
         squad_result['squad'],
         expected_points,
@@ -78,16 +83,14 @@ def main():
 
     if not starting_result:
         print("ERROR: Starting XI optimization failed!")
-        return
+        return None
 
     captain = gameweek_data.get_player_by_id(starting_result['captain'])
-    print(f"  - Starting XI optimized!")
     print(f"  - Captain: {captain.name}")
-    print(f"  - Total expected points (with captain): "
-          f"{starting_result['total_expected_points']:.2f}")
+    print(f"  - Total expected points: {starting_result['total_expected_points']:.2f}")
 
-    # Step 5: Display results
-    print("\n[5/5] Final Results:")
+    # Display results
+    print("\n[5/5] Final Squad:")
     optimizer.display_squad(
         squad_result['squad'],
         expected_points,
@@ -95,11 +98,7 @@ def main():
         captain_id=starting_result['captain']
     )
 
-    # Bench players
-    bench = [
-        pid for pid in squad_result['squad']
-        if pid not in starting_result['starting_xi']
-    ]
+    bench = [pid for pid in squad_result['squad'] if pid not in starting_result['starting_xi']]
     print("\nBENCH:")
     print("-" * 80)
     for pid in bench:
@@ -110,8 +109,190 @@ def main():
               f"£{player.price:4.1f}m | EP: {ep:5.2f}")
 
     print("\n" + "=" * 80)
-    print("Optimization complete!")
+
+    return {
+        'squad': squad_result['squad'],
+        'starting_xi': starting_result['starting_xi'],
+        'captain': starting_result['captain'],
+        'expected_points': expected_points,
+        'data': gameweek_data,
+        'api_client': api_client,
+    }
+
+
+def run_advanced_optimizer(config, user_team_config):
+    """Run advanced optimization with transfers and chip strategy."""
     print("=" * 80)
+    print("FPL OPTIMIZER - Advanced Strategy Planning")
+    print("=" * 80)
+
+    # Fetch data
+    print("\n[1/6] Fetching data from FPL API...")
+    api_client = FPLAPIClient()
+    gameweek_data = build_gameweek_data(api_client)
+
+    print(f"  - Loaded {len(gameweek_data.players)} players")
+    print(f"  - Current gameweek: {gameweek_data.current_gameweek}")
+
+    # Advanced predictions
+    print(f"\n[2/6] Generating advanced predictions...")
+    forecaster = AdvancedForecaster(gameweek_data, api_client)
+
+    # Generate predictions for multiple gameweeks
+    expected_points_by_week = {}
+    for gw_offset in range(config.chip_planning_horizon):
+        gw = gameweek_data.current_gameweek + gw_offset
+        ep = forecaster.get_predictions_for_all_players(num_gameweeks=1)
+        expected_points_by_week[gw] = ep
+
+    # Current predictions (next 3 weeks)
+    expected_points = forecaster.get_predictions_for_all_players(
+        num_gameweeks=config.prediction_horizon
+    )
+
+    print(f"  - Generated {config.chip_planning_horizon}-week forecast")
+
+    # Get or optimize squad
+    if user_team_config.current_squad:
+        print(f"\n[3/6] Using your current squad ({len(user_team_config.current_squad)} players)...")
+        current_squad = user_team_config.current_squad
+    else:
+        print("\n[3/6] No current squad - optimizing new squad...")
+        optimizer = SquadOptimizer(gameweek_data)
+        squad_result = optimizer.optimize_squad(expected_points, verbose=False)
+        if not squad_result:
+            print("ERROR: Squad optimization failed!")
+            return None
+        current_squad = squad_result['squad']
+        print(f"  - Optimized squad: {squad_result['total_expected_points']:.2f} EP")
+
+    # Transfer planning
+    print(f"\n[4/6] Planning transfers (next {config.transfer_planning_horizon} weeks)...")
+    transfer_optimizer = TransferOptimizer(gameweek_data)
+
+    # Get transfer recommendations
+    transfer_recs = transfer_optimizer.get_transfer_recommendations(
+        current_squad,
+        expected_points,
+        free_transfers=user_team_config.free_transfers,
+        budget_remaining=user_team_config.bank,
+        max_suggestions=5
+    )
+
+    if transfer_recs:
+        print("\n  Transfer Recommendations:")
+        print("  " + "=" * 76)
+        for rec in transfer_recs[:3]:
+            print(f"\n  #{rec['rank']}: {rec['player_out']['name']} → {rec['player_in']['name']}")
+            print(f"    Out: {rec['player_out']['team']} £{rec['player_out']['price']}m "
+                  f"(EP: {rec['player_out']['expected_points']:.1f})")
+            print(f"    In:  {rec['player_in']['team']} £{rec['player_in']['price']}m "
+                  f"(EP: {rec['player_in']['expected_points']:.1f})")
+            print(f"    Value: +{rec['value']:.1f} points | "
+                  f"Cost: £{rec['price_change']:+.1f}m | "
+                  f"Worth hit: {'YES' if rec['worth_hit'] else 'NO'}")
+            print(f"    Reasons: {', '.join(rec['reasons'])}")
+    else:
+        print("  - No valuable transfers identified - hold transfers")
+
+    # Multi-week transfer plan
+    print("\n  Multi-Week Transfer Plan:")
+    transfer_plan = transfer_optimizer.optimize_multi_week_transfers(
+        current_squad,
+        expected_points_by_week,
+        free_transfers=user_team_config.free_transfers,
+        budget_remaining=user_team_config.bank,
+        planning_horizon=config.transfer_planning_horizon
+    )
+
+    for gw, plan in list(transfer_plan.items())[:config.transfer_planning_horizon]:
+        print(f"\n  GW{gw}: {plan['action']}")
+        if plan['transfers']:
+            for t in plan['transfers']:
+                print(f"    {t['out']} → {t['in']} (Value: +{t['value']:.1f})")
+
+    # Chip strategy
+    if config.plan_chips:
+        print(f"\n[5/6] Analyzing chip strategy...")
+        chip_optimizer = ChipStrategyOptimizer(gameweek_data)
+
+        chip_strategy = chip_optimizer.get_chip_strategy(
+            current_squad,
+            expected_points_by_week,
+            available_chips=user_team_config.chips_available,
+            horizon=config.chip_planning_horizon
+        )
+
+        print("\n  Chip Recommendations:")
+        print("  " + "=" * 76)
+
+        for chip_name, strategy in chip_strategy.items():
+            print(f"\n  {chip_name.upper().replace('_', ' ')}:")
+            print(f"    Best gameweek: GW{strategy['best_gameweek']}")
+            print(f"    Expected value: +{strategy['best_value']:.1f} points")
+            print(f"    Recommended: {'YES' if strategy['recommended'] else 'NO'}")
+
+            if chip_name == 'triple_captain' and 'best_captain' in strategy:
+                print(f"    Best captain: {strategy['best_captain']}")
+
+    # Starting XI for current week
+    print("\n[6/6] Optimizing starting XI for GW{}...".format(gameweek_data.current_gameweek))
+    optimizer = SquadOptimizer(gameweek_data)
+    starting_result = optimizer.optimize_starting_xi(
+        current_squad,
+        expected_points,
+        verbose=False
+    )
+
+    if starting_result:
+        captain = gameweek_data.get_player_by_id(starting_result['captain'])
+        print(f"  - Captain: {captain.name}")
+        print(f"  - Expected points: {starting_result['total_expected_points']:.2f}")
+
+        optimizer.display_squad(
+            current_squad,
+            expected_points,
+            starting_xi=starting_result['starting_xi'],
+            captain_id=starting_result['captain']
+        )
+
+    print("\n" + "=" * 80)
+    print("Advanced optimization complete!")
+    print("=" * 80)
+
+
+def main():
+    """Main entry point with command-line arguments."""
+    parser = argparse.ArgumentParser(description='FPL Optimizer')
+    parser.add_argument(
+        '--mode',
+        choices=['basic', 'advanced'],
+        default='basic',
+        help='Optimization mode (default: basic)'
+    )
+    parser.add_argument(
+        '--preset',
+        choices=['conservative', 'balanced', 'aggressive'],
+        default='balanced',
+        help='Strategy preset (default: balanced)'
+    )
+    parser.add_argument(
+        '--team-id',
+        type=int,
+        help='Your FPL team ID (for advanced mode)'
+    )
+
+    args = parser.parse_args()
+
+    # Get configuration
+    config = get_config(args.preset)
+    user_team_config = UserTeamConfig(team_id=args.team_id)
+
+    # Run optimizer
+    if args.mode == 'basic':
+        run_basic_optimizer(config)
+    else:
+        run_advanced_optimizer(config, user_team_config)
 
 
 if __name__ == "__main__":
