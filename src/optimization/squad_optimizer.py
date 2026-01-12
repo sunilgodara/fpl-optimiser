@@ -321,17 +321,34 @@ class SquadOptimizer:
                 captain_id = player.id
                 break
 
+        # Select vice-captain (Phase 4: Issue #14 - Auto-sub handling)
+        # Vice-captain is the player with highest EP in starting XI (excluding captain)
+        # Important: if captain doesn't play, vice-captain becomes captain
+        vice_captain_id = None
+        vice_captain_ep = 0
+
+        for player_id in starting_xi:
+            if player_id != captain_id:
+                player_ep = expected_points.get(player_id, 0)
+                if player_ep > vice_captain_ep:
+                    vice_captain_ep = player_ep
+                    vice_captain_id = player_id
+
         total_points = pulp.value(prob.objective)
 
         if verbose:
             captain = self.data.get_player_by_id(captain_id)
+            vice_captain = self.data.get_player_by_id(vice_captain_id) if vice_captain_id else None
             print(f"\nStarting XI optimized successfully!")
             print(f"Captain: {captain.name}")
+            if vice_captain:
+                print(f"Vice-Captain: {vice_captain.name} (backup if captain doesn't play)")
             print(f"Total expected points: {total_points:.2f}")
 
         return {
             'starting_xi': starting_xi,
             'captain': captain_id,
+            'vice_captain': vice_captain_id,
             'total_expected_points': total_points
         }
 

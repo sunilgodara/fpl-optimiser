@@ -90,7 +90,11 @@ def run_basic_optimizer(config):
         return None
 
     captain = gameweek_data.get_player_by_id(starting_result['captain'])
+    vice_captain = gameweek_data.get_player_by_id(starting_result['vice_captain']) if starting_result.get('vice_captain') else None
+
     print(f"  - Captain: {captain.name}")
+    if vice_captain:
+        print(f"  - Vice-Captain: {vice_captain.name} (backup if captain doesn't play)")
     print(f"  - Total expected points: {starting_result['total_expected_points']:.2f}")
 
     # Display results
@@ -419,7 +423,11 @@ def run_advanced_optimizer(config, user_team_config, args):
 
     if starting_result:
         captain = gameweek_data.get_player_by_id(starting_result['captain'])
+        vice_captain = gameweek_data.get_player_by_id(starting_result['vice_captain']) if starting_result.get('vice_captain') else None
+
         print(f"  - Captain: {captain.name}")
+        if vice_captain:
+            print(f"  - Vice-Captain: {vice_captain.name} (backup if captain doesn't play)")
         print(f"  - Expected points: {starting_result['total_expected_points']:.2f}")
 
         if scenario_used == "wildcard":

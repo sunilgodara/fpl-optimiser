@@ -332,16 +332,56 @@ class TransferOptimizer:
             team_out = self.data.get_team_by_id(player_out.team_id)
             team_in = self.data.get_team_by_id(player_in.team_id)
 
-            # Determine reasoning
+            # Determine reasoning (Enhanced for Polish Phase)
             reasons = []
+
+            # Expected points analysis
+            ep_diff = transfer['ep_in'] - transfer['ep_out']
+            if ep_diff > 3.0:
+                reasons.append(f"Much better expected points (+{ep_diff:.1f} EP)")
+            elif ep_diff > 1.5:
+                reasons.append(f"Better expected points (+{ep_diff:.1f} EP)")
+
+            # Fixture analysis
             if transfer['ep_in'] > transfer['ep_out'] * 1.5:
-                reasons.append("Significant fixture swing")
-            if player_in.form > player_out.form * 1.3:
-                reasons.append("Much better form")
+                reasons.append("Excellent fixture swing")
+            elif transfer['ep_in'] > transfer['ep_out'] * 1.2:
+                reasons.append("Favorable upcoming fixtures")
+
+            # Form analysis
+            form_diff = player_in.form - player_out.form
+            if player_in.form > player_out.form * 1.3 and form_diff > 1.5:
+                reasons.append(f"Much better form (+{form_diff:.1f})")
+            elif form_diff > 0.5:
+                reasons.append(f"Better recent form (+{form_diff:.1f})")
+
+            # Injury/availability concerns
             if player_out.chance_of_playing_next_round and player_out.chance_of_playing_next_round < 75:
-                reasons.append("Current player injury concern")
+                reasons.append(f"Injury concern ({player_out.chance_of_playing_next_round}% chance to play)")
+            elif player_out.status and player_out.status != 'a':
+                reasons.append("Availability concern")
+
+            # Price strategy
             if transfer['price_diff'] < -1.0:
-                reasons.append("Downgrade to fund other moves")
+                reasons.append(f"Downgrade (frees £{abs(transfer['price_diff']):.1f}m)")
+            elif transfer['price_diff'] < -0.3:
+                reasons.append(f"Save budget (£{abs(transfer['price_diff']):.1f}m)")
+            elif transfer['price_diff'] > 0.5:
+                reasons.append(f"Premium upgrade (+£{transfer['price_diff']:.1f}m)")
+
+            # Ownership considerations (for rank climbing)
+            ownership_diff = player_in.selected_by_percent - player_out.selected_by_percent
+            if player_in.selected_by_percent < 10.0 and ep_diff > 0:
+                reasons.append(f"Differential pick ({player_in.selected_by_percent:.1f}% owned)")
+            elif player_in.selected_by_percent > 50.0 and ownership_diff > 20.0:
+                reasons.append(f"Template player ({player_in.selected_by_percent:.1f}% owned)")
+            elif ownership_diff < -30.0:
+                reasons.append(f"Fading template (avoid crowd)")
+
+            # PPG trends
+            if player_in.points_per_game > player_out.points_per_game * 1.3:
+                ppg_diff = player_in.points_per_game - player_out.points_per_game
+                reasons.append(f"Better season avg (+{ppg_diff:.1f} PPG)")
 
             recommendations.append({
                 'rank': i + 1,
