@@ -109,7 +109,7 @@ class ChipStrategyOptimizer:
             horizon_points = {}
             for player in self.data.get_available_players():
                 total_ep = 0
-                for future_gw in range(gw, min(gw + 5, current_gw + horizon)):
+                for future_gw in range(gw, min(gw + 5, start_gw + horizon)):
                     if future_gw in expected_points_by_week:
                         total_ep += expected_points_by_week[future_gw].get(player.id, 0)
                 horizon_points[player.id] = total_ep
