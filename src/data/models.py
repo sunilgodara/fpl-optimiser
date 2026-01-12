@@ -157,7 +157,20 @@ def build_gameweek_data(api_client) -> GameweekData:
     """
     # Get element types mapping
     element_types_data = api_client.get_element_types()
-    element_types_map = {et['id']: et['singular_name_short'] for et in element_types_data}
+
+    # Normalize position names (FPL API uses 'GKP' but we use 'GK')
+    position_map = {
+        'GKP': 'GK',
+        'DEF': 'DEF',
+        'MID': 'MID',
+        'FWD': 'FWD'
+    }
+
+    element_types_map = {}
+    for et in element_types_data:
+        api_position = et['singular_name_short']
+        normalized_position = position_map.get(api_position, api_position)
+        element_types_map[et['id']] = normalized_position
 
     # Build players
     players_data = api_client.get_players()
