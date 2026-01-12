@@ -40,14 +40,19 @@ class SquadOptimizer:
     def optimize_squad(
         self,
         expected_points: Dict[int, float],
-        verbose: bool = True
+        verbose: bool = True,
+        bench_weight: float = 0.1
     ) -> Optional[Dict]:
         """
-        Optimize squad selection to maximize expected points.
+        Optimize squad selection to maximize expected points with bench fodder strategy.
+
+        The optimizer now prioritizes a strong starting XI with cheap bench players,
+        rather than spreading budget evenly across all 15 players.
 
         Args:
             expected_points: Dict mapping player_id -> expected_points
             verbose: Print optimization details
+            bench_weight: Weight for bench players (0.1 = bench players worth 10% of starters)
 
         Returns:
             Dict with 'squad' (list of player IDs) and 'total_expected_points'
@@ -62,11 +67,40 @@ class SquadOptimizer:
             for player in self.players
         }
 
-        # Objective: Maximize expected points
+        # Bench fodder strategy: Weight players by their likelihood of starting
+        # For each position, estimate starting likelihood based on EP ranking
+        position_weights = {}
+
+        for position in ['GK', 'DEF', 'MID', 'FWD']:
+            position_players = [p for p in self.players if p.position == position]
+            # Sort by expected points
+            sorted_players = sorted(
+                position_players,
+                key=lambda p: expected_points.get(p.id, 0),
+                reverse=True
+            )
+
+            # Assign weights based on ranking within position
+            # Starters: 1.0x weight, Bench: bench_weight (e.g., 0.1x)
+            starters_needed = {
+                'GK': 1,   # 1 GK plays
+                'DEF': 5,  # Up to 5 DEF can play
+                'MID': 5,  # Up to 5 MID can play
+                'FWD': 3   # Up to 3 FWD can play
+            }[position]
+
+            for idx, player in enumerate(sorted_players):
+                # Top players in position get full weight, rest get bench_weight
+                if idx < starters_needed:
+                    position_weights[player.id] = 1.0
+                else:
+                    position_weights[player.id] = bench_weight
+
+        # Objective: Maximize weighted expected points (prioritizes strong starting XI)
         prob += pulp.lpSum([
-            expected_points.get(player.id, 0) * player_vars[player.id]
+            expected_points.get(player.id, 0) * position_weights.get(player.id, 1.0) * player_vars[player.id]
             for player in self.players
-        ]), "Total_Expected_Points"
+        ]), "Weighted_Expected_Points"
 
         # Constraint 1: Squad size = 15
         prob += pulp.lpSum([

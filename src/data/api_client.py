@@ -178,7 +178,7 @@ class FPLAPIClient:
 
         Returns:
             Dict with 'squad' (list of player IDs), 'bank' (money remaining),
-            'squad_value', 'free_transfers'
+            'squad_value', 'free_transfers', 'player_values' (purchase and selling prices)
         """
         current_gw = self.get_current_gameweek()
         if not current_gw:
@@ -191,11 +191,39 @@ class FPLAPIClient:
             # Get current picks
             picks_data = self.get_team_picks(team_id, current_gw)
 
-            # Extract squad (all 15 players)
-            squad = [pick['element'] for pick in picks_data['picks']]
+            # Extract squad (all 15 players) with purchase/selling prices
+            squad = []
+            player_values = {}  # {player_id: {'purchase_price': X, 'selling_price': Y}}
+
+            for pick in picks_data['picks']:
+                player_id = pick['element']
+                squad.append(player_id)
+
+                # Extract purchase and selling prices (in tenths, e.g., 100 = £10.0m)
+                player_values[player_id] = {
+                    'purchase_price': pick.get('purchase_price', 0) / 10.0,
+                    'selling_price': pick.get('selling_price', 0) / 10.0
+                }
 
             # Get entry history for the current gameweek
             entry_history = picks_data.get('entry_history', {})
+
+            # Calculate liquid bank (actual money available)
+            liquid_bank = entry_history.get('bank', team_info['last_deadline_bank']) / 10.0
+
+            # Calculate total locked-in value
+            # This is the difference between current prices and selling prices
+            total_current_value = 0
+            total_selling_value = 0
+
+            for player_id in squad:
+                # Get current price from bootstrap data
+                player_data = next((p for p in self.get_players() if p['id'] == player_id), None)
+                if player_data:
+                    total_current_value += player_data['now_cost'] / 10.0
+                total_selling_value += player_values[player_id]['selling_price']
+
+            locked_value = total_current_value - total_selling_value
 
             # Free transfers available is in the entry_history
             # 'event_transfers' is transfers MADE this week
@@ -233,14 +261,17 @@ class FPLAPIClient:
 
             return {
                 'squad': squad,
-                'bank': entry_history.get('bank', team_info['last_deadline_bank']) / 10.0,
+                'bank': liquid_bank,
                 'squad_value': entry_history.get('value', team_info['last_deadline_value']) / 10.0,
                 'free_transfers': free_transfers,  # We'll improve this
                 'transfers_made_this_week': transfers_made_this_gw,
                 'total_points': team_info['summary_overall_points'],
                 'overall_rank': team_info['summary_overall_rank'],
                 'team_name': team_info['name'],
-                'player_name': f"{team_info['player_first_name']} {team_info['player_last_name']}"
+                'player_name': f"{team_info['player_first_name']} {team_info['player_last_name']}",
+                'player_values': player_values,  # NEW: purchase and selling prices
+                'total_selling_value': total_selling_value,  # NEW: what you'd get if you sold everyone
+                'locked_value': locked_value  # NEW: value locked in players
             }
         except Exception as e:
             print(f"Warning: Could not fetch team data: {str(e)}")

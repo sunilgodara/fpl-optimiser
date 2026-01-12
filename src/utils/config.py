@@ -51,6 +51,9 @@ class UserTeamConfig:
     free_transfers: int = 1
     bank: float = 0.0
     chips_available: list = None  # ['wildcard', 'bboost', '3xc', 'freehit']
+    player_values: Optional[dict] = None  # {player_id: {'purchase_price': X, 'selling_price': Y}}
+    total_selling_value: float = 0.0  # Total value if all players sold
+    locked_value: float = 0.0  # Value locked in players (current - selling)
 
     def __post_init__(self):
         if self.chips_available is None:

@@ -147,6 +147,11 @@ def run_advanced_optimizer(config, user_team_config, args):
         if team_data:
             user_team_config.current_squad = team_data['squad']
 
+            # Store player values (purchase and selling prices)
+            user_team_config.player_values = team_data.get('player_values', {})
+            user_team_config.total_selling_value = team_data.get('total_selling_value', 0.0)
+            user_team_config.locked_value = team_data.get('locked_value', 0.0)
+
             # Use fetched data unless overridden
             if args.bank is None:
                 user_team_config.bank = team_data['bank']
@@ -158,7 +163,14 @@ def run_advanced_optimizer(config, user_team_config, args):
             print(f"  - Overall Rank: {team_data['overall_rank']:,}")
             print(f"  - Total Points: {team_data['total_points']}")
             print(f"  - Squad Value: £{team_data['squad_value']:.1f}m")
-            print(f"  - Bank: £{user_team_config.bank:.1f}m{' (manual override)' if args.bank is not None else ''}")
+            print(f"  - Bank: £{user_team_config.bank:.1f}m{' (manual override)' if args.bank is not None else ''} (liquid)")
+
+            # Show value breakdown
+            if user_team_config.locked_value > 0.01:  # Only show if significant
+                total_available = user_team_config.bank + user_team_config.total_selling_value
+                print(f"  - Locked Value: £{user_team_config.locked_value:.1f}m (profit locked in players)")
+                print(f"  - Total Budget Available: £{total_available:.1f}m (if you sell all players)")
+
             print(f"  - Free Transfers: {user_team_config.free_transfers}{' (manual override)' if args.free_transfers is not None else ' (API estimate - may be inaccurate)'}")
 
             if args.free_transfers is None and team_data.get('transfers_made_this_week', 0) == 0:
@@ -264,7 +276,8 @@ def run_advanced_optimizer(config, user_team_config, args):
             expected_points,
             free_transfers=user_team_config.free_transfers,
             budget_remaining=user_team_config.bank,
-            max_suggestions=5
+            max_suggestions=5,
+            player_values=user_team_config.player_values
         )
 
         if transfer_recs:
@@ -291,7 +304,8 @@ def run_advanced_optimizer(config, user_team_config, args):
             expected_points,
             free_transfers=user_team_config.free_transfers,
             budget_remaining=user_team_config.bank,
-            max_suggestions=5
+            max_suggestions=5,
+            player_values=user_team_config.player_values
         )
 
         if transfer_recs:
@@ -320,7 +334,8 @@ def run_advanced_optimizer(config, user_team_config, args):
             expected_points_by_week,
             free_transfers=user_team_config.free_transfers,
             budget_remaining=user_team_config.bank,
-            planning_horizon=config.transfer_planning_horizon
+            planning_horizon=config.transfer_planning_horizon,
+            player_values=user_team_config.player_values
         )
 
         for gw, plan in list(transfer_plan.items())[:config.transfer_planning_horizon]:

@@ -49,7 +49,8 @@ class TransferOptimizer:
         free_transfers: int = 1,
         budget_remaining: float = 0.0,
         num_transfers: int = 1,
-        num_gameweeks: int = 3
+        num_gameweeks: int = 3,
+        player_values: Optional[Dict[int, Dict]] = None
     ) -> Optional[Dict]:
         """
         Suggest best transfers for current gameweek.
@@ -61,6 +62,8 @@ class TransferOptimizer:
             budget_remaining: Budget available (in millions)
             num_transfers: Number of transfers to suggest
             num_gameweeks: Horizon for expected points
+            player_values: Dict of {player_id: {'purchase_price': X, 'selling_price': Y}}
+                          Used to calculate true available budget (selling price, not current price)
 
         Returns:
             Dict with transfer suggestions or None
@@ -77,13 +80,19 @@ class TransferOptimizer:
         best_transfers = []
 
         for player_out in squad_players:
+            # Get selling price (use current price if no player_values provided)
+            if player_values and player_out.id in player_values:
+                selling_price = player_values[player_out.id]['selling_price']
+            else:
+                selling_price = player_out.price  # Fallback to current price
+
             for player_in in potential_transfers_in:
                 # Check position match
                 if player_out.position != player_in.position:
                     continue
 
-                # Check budget
-                price_diff = player_in.price - player_out.price
+                # Check budget using selling price of player_out
+                price_diff = player_in.price - selling_price
                 if price_diff > budget_remaining:
                     continue
 
@@ -135,7 +144,8 @@ class TransferOptimizer:
         free_transfers: int = 1,
         budget_remaining: float = 0.0,
         planning_horizon: int = 5,
-        use_wildcard_gw: Optional[int] = None
+        use_wildcard_gw: Optional[int] = None,
+        player_values: Optional[Dict[int, Dict]] = None
     ) -> Dict:
         """
         Optimize transfers over multiple gameweeks.
@@ -197,7 +207,8 @@ class TransferOptimizer:
                 working_free_transfers,
                 working_budget,
                 num_transfers=num_transfers_to_make,
-                num_gameweeks=3
+                num_gameweeks=3,
+                player_values=player_values
             )
 
             if suggestion and suggestion['recommended']:
@@ -288,7 +299,8 @@ class TransferOptimizer:
         expected_points: Dict[int, float],
         free_transfers: int = 1,
         budget_remaining: float = 0.0,
-        max_suggestions: int = 5
+        max_suggestions: int = 5,
+        player_values: Optional[Dict[int, Dict]] = None
     ) -> List[Dict]:
         """
         Get top transfer recommendations with reasoning.
@@ -304,7 +316,8 @@ class TransferOptimizer:
             free_transfers,
             budget_remaining,
             num_transfers=num_transfers_to_suggest,
-            num_gameweeks=3
+            num_gameweeks=3,
+            player_values=player_values
         )
 
         if not suggestion:

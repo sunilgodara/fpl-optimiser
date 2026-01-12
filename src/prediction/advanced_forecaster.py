@@ -158,6 +158,37 @@ class AdvancedForecaster:
 
         return min(reliability, 1.0)
 
+    def _get_team_form(self, team_id: int, num_games: int = 5) -> float:
+        """
+        Calculate team form based on recent results.
+
+        Returns a form score (0.0 to 2.0+), where:
+        - 1.0 = average form
+        - > 1.0 = good form (increases predicted points)
+        - < 1.0 = poor form (decreases predicted points)
+        """
+        # Get all players from this team
+        team_players = [p for p in self.data.players if p.team_id == team_id]
+
+        if not team_players:
+            return 1.0
+
+        # Calculate average form from team players
+        # Form in FPL is weighted points from recent games
+        form_values = [p.form for p in team_players if p.form > 0 and p.minutes > 90]
+
+        if not form_values:
+            return 1.0
+
+        # Average team form (form is already normalized by FPL)
+        avg_form = sum(form_values) / len(form_values)
+
+        # Convert to multiplier: avg form of 3.0 = 1.0x, higher = better
+        # Typical form range: 0.5 - 8.0
+        form_multiplier = 0.7 + (avg_form / 10.0)  # Maps roughly to 0.75 - 1.5
+
+        return max(0.5, min(1.5, form_multiplier))  # Clamp between 0.5 and 1.5
+
     def calculate_fixture_difficulty(
         self,
         player: Player,
@@ -165,6 +196,12 @@ class AdvancedForecaster:
     ) -> float:
         """
         Calculate fixture difficulty multiplier with advanced team strength analysis.
+
+        Enhanced with:
+        - Base difficulty (1-5 FPL rating) - 40%
+        - Team strength (attack/defense) - 30%
+        - Recent form (last 5 games) - 20%
+        - Home/away advantage - 10%
         """
         fixtures = self.team_fixtures.get(player.team_id, [])
         if not fixtures:
@@ -182,6 +219,9 @@ class AdvancedForecaster:
         multipliers = []
         position_weights = self.POSITION_FIXTURE_WEIGHTS[player.position]
 
+        # Get player's team form
+        team_form = self._get_team_form(player.team_id)
+
         for fixture in fixtures:
             is_home = fixture.team_h == player.team_id
             opponent_id = fixture.team_a if is_home else fixture.team_h
@@ -190,11 +230,11 @@ class AdvancedForecaster:
             if not opponent:
                 continue
 
-            # Basic difficulty multiplier
+            # 1. Base difficulty multiplier (40% weight)
             difficulty = fixture.team_h_difficulty if is_home else fixture.team_a_difficulty
             base_mult = self.DIFFICULTY_MULTIPLIERS.get(difficulty, 1.0)
 
-            # Advanced: Consider opponent's specific strengths
+            # 2. Team strength analysis (30% weight)
             if is_home:
                 opp_attack = opponent.strength_attack_away
                 opp_defence = opponent.strength_defence_away
@@ -209,17 +249,33 @@ class AdvancedForecaster:
             defence_factor = 1.0 + (1250 - opp_attack) / 500
 
             # Combine based on position
-            position_mult = (
+            strength_mult = (
                 position_weights['attack'] * attack_factor +
                 position_weights['defence'] * defence_factor
             )
 
-            # Home advantage
-            if is_home:
-                position_mult *= 1.08
+            # 3. Recent form analysis (20% weight)
+            # Get opponent's form
+            opponent_form = self._get_team_form(opponent_id)
 
-            # Blend basic and advanced multipliers
-            fixture_mult = (base_mult * 0.6) + (position_mult * 0.4)
+            # Good team form vs poor opponent form = higher multiplier
+            # Form factor: (my_team_form / opponent_form)
+            # If my team is in form 1.3 and opponent is weak 0.8, factor = 1.625
+            form_factor = team_form / max(opponent_form, 0.5)
+            form_factor = max(0.7, min(form_factor, 1.5))  # Clamp 0.7 - 1.5
+
+            # 4. Home advantage (10% weight in final calculation)
+            home_factor = 1.08 if is_home else 1.0
+
+            # Combine all factors with specified weights
+            # 40% base + 30% strength + 20% form + 10% home
+            fixture_mult = (
+                base_mult * 0.40 +
+                strength_mult * 0.30 +
+                form_factor * 0.20 +
+                home_factor * 0.10
+            )
+
             multipliers.append(fixture_mult)
 
         return sum(multipliers) / len(multipliers) if multipliers else 1.0
