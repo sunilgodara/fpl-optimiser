@@ -140,15 +140,24 @@ def run_advanced_optimizer(config, user_team_config):
         team_data = api_client.get_team_current_squad(user_team_config.team_id)
         if team_data:
             user_team_config.current_squad = team_data['squad']
-            user_team_config.bank = team_data['bank']
-            user_team_config.free_transfers = team_data.get('free_transfers', 1)
+
+            # Use fetched data unless overridden
+            if args.bank is None:
+                user_team_config.bank = team_data['bank']
+            if args.free_transfers is None:
+                user_team_config.free_transfers = team_data.get('free_transfers', 1)
+
             print(f"  - Team: {team_data['team_name']}")
             print(f"  - Manager: {team_data['player_name']}")
             print(f"  - Overall Rank: {team_data['overall_rank']:,}")
             print(f"  - Total Points: {team_data['total_points']}")
             print(f"  - Squad Value: £{team_data['squad_value']:.1f}m")
-            print(f"  - Bank: £{team_data['bank']:.1f}m")
-            print(f"  - Free Transfers: {user_team_config.free_transfers}")
+            print(f"  - Bank: £{user_team_config.bank:.1f}m{' (manual override)' if args.bank is not None else ''}")
+            print(f"  - Free Transfers: {user_team_config.free_transfers}{' (manual override)' if args.free_transfers is not None else ' (API estimate - may be inaccurate)'}")
+
+            if args.free_transfers is None and team_data.get('transfers_made_this_week', 0) == 0:
+                print(f"  - Note: No transfers made in GW{gameweek_data.current_gameweek}. You likely have 2+ free transfers.")
+                print(f"           Use --free-transfers to specify exact count (e.g., --free-transfers 5)")
         else:
             print(f"  - Could not fetch team data. Will optimize new squad.")
 
@@ -302,12 +311,28 @@ def main():
         type=int,
         help='Your FPL team ID (for advanced mode)'
     )
+    parser.add_argument(
+        '--free-transfers',
+        type=int,
+        help='Number of free transfers available (overrides API detection)'
+    )
+    parser.add_argument(
+        '--bank',
+        type=float,
+        help='Money in bank in millions (e.g., 1.8 for £1.8m)'
+    )
 
     args = parser.parse_args()
 
     # Get configuration
     config = get_config(args.preset)
     user_team_config = UserTeamConfig(team_id=args.team_id)
+
+    # Apply manual overrides if provided
+    if args.free_transfers is not None:
+        user_team_config.free_transfers = args.free_transfers
+    if args.bank is not None:
+        user_team_config.bank = args.bank
 
     # Run optimizer
     if args.mode == 'basic':

@@ -56,11 +56,14 @@ python -m src.main --preset aggressive
 # Run advanced mode with transfer planning and chip strategy
 python -m src.main --mode advanced
 
-# With your FPL team ID (future: fetch your current squad)
+# With your FPL team ID (fetches your current squad)
 python -m src.main --mode advanced --team-id 450211
 
+# With manual free transfers override (recommended for accuracy)
+python -m src.main --mode advanced --team-id 450211 --free-transfers 5
+
 # Advanced mode with aggressive strategy
-python -m src.main --mode advanced --preset aggressive
+python -m src.main --mode advanced --preset aggressive --team-id 450211 --free-transfers 2
 ```
 
 ## Command-Line Options
@@ -68,6 +71,10 @@ python -m src.main --mode advanced --preset aggressive
 - `--mode`: `basic` or `advanced` (default: `basic`)
 - `--preset`: `conservative`, `balanced`, or `aggressive` (default: `balanced`)
 - `--team-id`: Your FPL team ID for fetching current squad (optional)
+- `--free-transfers`: Number of free transfers available (optional, overrides API estimate)
+- `--bank`: Money in bank in millions, e.g., 1.8 for £1.8m (optional, overrides API value)
+
+**Note on Free Transfers:** The FPL API doesn't directly expose free transfers available for the next gameweek. The optimizer estimates this value, but it may be inaccurate. For best results, manually specify using `--free-transfers` by checking your FPL transfers page.
 
 ## Output Examples
 
