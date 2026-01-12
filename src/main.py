@@ -2,14 +2,14 @@
 Main entry point for FPL Optimizer with advanced features.
 """
 import argparse
-from data.api_client import FPLAPIClient
-from data.models import build_gameweek_data
-from prediction.forecaster import PointForecaster
-from prediction.advanced_forecaster import AdvancedForecaster
-from optimization.squad_optimizer import SquadOptimizer
-from optimization.transfer_optimizer import TransferOptimizer
-from optimization.chip_strategy import ChipStrategyOptimizer
-from utils.config import get_config, UserTeamConfig
+from .data.api_client import FPLAPIClient
+from .data.models import build_gameweek_data
+from .prediction.forecaster import PointForecaster
+from .prediction.advanced_forecaster import AdvancedForecaster
+from .optimization.squad_optimizer import SquadOptimizer
+from .optimization.transfer_optimizer import TransferOptimizer
+from .optimization.chip_strategy import ChipStrategyOptimizer
+from .utils.config import get_config, UserTeamConfig
 
 
 def run_basic_optimizer(config):

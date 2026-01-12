@@ -57,7 +57,7 @@ python -m src.main --preset aggressive
 python -m src.main --mode advanced
 
 # With your FPL team ID (future: fetch your current squad)
-python -m src.main --mode advanced --team-id 123456
+python -m src.main --mode advanced --team-id 450211
 
 # Advanced mode with aggressive strategy
 python -m src.main --mode advanced --preset aggressive
