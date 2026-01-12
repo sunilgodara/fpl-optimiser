@@ -200,55 +200,13 @@ def run_advanced_optimizer(config, user_team_config, args):
         current_squad = squad_result['squad']
         print(f"  - Optimized squad: {squad_result['total_expected_points']:.2f} EP")
 
-    # Transfer planning
+    # Chip strategy - EVALUATE FIRST (Phase 1 Fix #3)
     step_num = 5 if user_team_config.team_id else 4
-    print(f"\n[{step_num}/6] Planning transfers (next {config.transfer_planning_horizon} weeks)...")
-    transfer_optimizer = TransferOptimizer(gameweek_data)
+    wildcard_recommended_for_next_gw = False
+    chip_strategy = None
 
-    # Get transfer recommendations
-    transfer_recs = transfer_optimizer.get_transfer_recommendations(
-        current_squad,
-        expected_points,
-        free_transfers=user_team_config.free_transfers,
-        budget_remaining=user_team_config.bank,
-        max_suggestions=5
-    )
-
-    if transfer_recs:
-        print("\n  Transfer Recommendations:")
-        print("  " + "=" * 76)
-        for rec in transfer_recs[:3]:
-            print(f"\n  #{rec['rank']}: {rec['player_out']['name']} → {rec['player_in']['name']}")
-            print(f"    Out: {rec['player_out']['team']} £{rec['player_out']['price']}m "
-                  f"(EP: {rec['player_out']['expected_points']:.1f})")
-            print(f"    In:  {rec['player_in']['team']} £{rec['player_in']['price']}m "
-                  f"(EP: {rec['player_in']['expected_points']:.1f})")
-            print(f"    Value: +{rec['value']:.1f} points | "
-                  f"Cost: £{rec['price_change']:+.1f}m | "
-                  f"Worth hit: {'YES' if rec['worth_hit'] else 'NO'}")
-            print(f"    Reasons: {', '.join(rec['reasons'])}")
-    else:
-        print("  - No valuable transfers identified - hold transfers")
-
-    # Multi-week transfer plan
-    print("\n  Multi-Week Transfer Plan:")
-    transfer_plan = transfer_optimizer.optimize_multi_week_transfers(
-        current_squad,
-        expected_points_by_week,
-        free_transfers=user_team_config.free_transfers,
-        budget_remaining=user_team_config.bank,
-        planning_horizon=config.transfer_planning_horizon
-    )
-
-    for gw, plan in list(transfer_plan.items())[:config.transfer_planning_horizon]:
-        print(f"\n  GW{gw}: {plan['action']}")
-        if plan['transfers']:
-            for t in plan['transfers']:
-                print(f"    {t['out']} → {t['in']} (Value: +{t['value']:.1f})")
-
-    # Chip strategy
     if config.plan_chips:
-        print(f"\n  Analyzing chip strategy...")
+        print(f"\n[{step_num}/6] Analyzing chip strategy...")
         chip_optimizer = ChipStrategyOptimizer(gameweek_data)
 
         chip_strategy = chip_optimizer.get_chip_strategy(
@@ -258,21 +216,151 @@ def run_advanced_optimizer(config, user_team_config, args):
             horizon=config.chip_planning_horizon
         )
 
-        print("\n  Chip Recommendations:")
+        # Check if Wildcard is recommended for next gameweek
+        if 'wildcard' in chip_strategy:
+            wildcard_gw = chip_strategy['wildcard']['best_gameweek']
+            if wildcard_gw == next_gw and chip_strategy['wildcard']['recommended']:
+                wildcard_recommended_for_next_gw = True
+
+    # Transfer planning - CONDITIONAL ON CHIP DECISION
+    step_num = 6 if user_team_config.team_id else 5
+    print(f"\n[{step_num}/6] Planning strategy for GW{next_gw}...")
+    transfer_optimizer = TransferOptimizer(gameweek_data)
+
+    # SCENARIO-BASED RECOMMENDATIONS
+    if wildcard_recommended_for_next_gw:
+        print("\n" + "=" * 80)
+        print("WILDCARD RECOMMENDED FOR GW{next_gw}".format(next_gw=next_gw))
+        print("Showing 2 scenarios for your decision:")
+        print("=" * 80)
+
+        # Scenario A: Use Wildcard
+        print(f"\n📋 SCENARIO A: Use Wildcard in GW{next_gw}")
+        print("-" * 80)
+        print("With Wildcard, you can rebuild your entire 15-man squad from scratch.")
+
+        # Optimize squad with wildcard (unlimited transfers)
+        optimizer = SquadOptimizer(gameweek_data)
+        wildcard_squad = optimizer.optimize_squad(expected_points, verbose=False)
+
+        if wildcard_squad:
+            print(f"  Expected value: +{chip_strategy['wildcard']['best_value']:.1f} points")
+            print(f"  Total squad expected points: {wildcard_squad['total_expected_points']:.2f}")
+            print(f"  Squad cost: £{wildcard_squad['total_cost']:.1f}m")
+
+        # Scenario B: Don't use Wildcard (regular transfers)
+        print(f"\n📋 SCENARIO B: Save Wildcard, make regular transfers")
+        print("-" * 80)
+
+        transfer_recs = transfer_optimizer.get_transfer_recommendations(
+            current_squad,
+            expected_points,
+            free_transfers=user_team_config.free_transfers,
+            budget_remaining=user_team_config.bank,
+            max_suggestions=5
+        )
+
+        if transfer_recs:
+            num_free = user_team_config.free_transfers
+            num_shown = min(len(transfer_recs), num_free, 5)
+            print(f"  You have {num_free} free transfer{'s' if num_free != 1 else ''}. Best {num_shown} transfer{'s' if num_shown != 1 else ''} for GW{next_gw}:")
+            for rec in transfer_recs[:num_shown]:
+                print(f"\n  #{rec['rank']}: {rec['player_out']['name']} → {rec['player_in']['name']}")
+                print(f"    Value: +{rec['value']:.1f} points | Cost: £{rec['price_change']:+.1f}m")
+        else:
+            print("  - No valuable transfers identified")
+
+        print("\n" + "=" * 80)
+        print(f"💡 RECOMMENDATION: Scenario A (Wildcard) offers +{chip_strategy['wildcard']['best_value']:.1f} points value")
+        print("=" * 80)
+
+    else:
+        # No Wildcard for next GW - show regular transfers
+        print("\n  Transfer Recommendations:")
         print("  " + "=" * 76)
 
+        transfer_recs = transfer_optimizer.get_transfer_recommendations(
+            current_squad,
+            expected_points,
+            free_transfers=user_team_config.free_transfers,
+            budget_remaining=user_team_config.bank,
+            max_suggestions=5
+        )
+
+        if transfer_recs:
+            num_free = user_team_config.free_transfers
+            num_shown = min(len(transfer_recs), num_free, 5)
+            print(f"  You have {num_free} free transfer{'s' if num_free != 1 else ''}. Best {num_shown} transfer{'s' if num_shown != 1 else ''} for GW{next_gw}:")
+            print()
+            for rec in transfer_recs[:num_shown]:
+                print(f"  #{rec['rank']}: {rec['player_out']['name']} → {rec['player_in']['name']}")
+                print(f"    Out: {rec['player_out']['team']} £{rec['player_out']['price']}m "
+                      f"(EP: {rec['player_out']['expected_points']:.1f})")
+                print(f"    In:  {rec['player_in']['team']} £{rec['player_in']['price']}m "
+                      f"(EP: {rec['player_in']['expected_points']:.1f})")
+                print(f"    Value: +{rec['value']:.1f} points | "
+                      f"Cost: £{rec['price_change']:+.1f}m | "
+                      f"Worth hit: {'YES' if rec['worth_hit'] else 'NO'}")
+                print(f"    Reasons: {', '.join(rec['reasons'])}")
+                print()
+        else:
+            print("  - No valuable transfers identified - hold transfers")
+
+        # Multi-week transfer plan
+        print("\n  Multi-Week Transfer Plan:")
+        transfer_plan = transfer_optimizer.optimize_multi_week_transfers(
+            current_squad,
+            expected_points_by_week,
+            free_transfers=user_team_config.free_transfers,
+            budget_remaining=user_team_config.bank,
+            planning_horizon=config.transfer_planning_horizon
+        )
+
+        for gw, plan in list(transfer_plan.items())[:config.transfer_planning_horizon]:
+            print(f"\n  GW{gw}: {plan['action']}")
+            if plan['transfers']:
+                for t in plan['transfers']:
+                    print(f"    {t['out']} → {t['in']} (Value: +{t['value']:.1f})")
+
+    # Chip strategy summary (if not already shown above)
+    if config.plan_chips and chip_strategy:
+        print("\n  Full Chip Strategy Overview:")
+        print("  " + "=" * 76)
+        print("  Note: Only ONE chip can be used per gameweek (FPL rules)")
+
+        # Check for conflicts
+        has_conflicts = '_conflicts' in chip_strategy
+
         for chip_name, strategy in chip_strategy.items():
+            # Skip metadata keys
+            if chip_name.startswith('_'):
+                continue
+
             print(f"\n  {chip_name.upper().replace('_', ' ')}:")
             print(f"    Best gameweek: GW{strategy['best_gameweek']}")
             print(f"    Expected value: +{strategy['best_value']:.1f} points")
             print(f"    Recommended: {'YES' if strategy['recommended'] else 'NO'}")
 
+            # Show conflict resolution info
+            if 'conflict_resolution' in strategy:
+                print(f"    ⚠️  {strategy['conflict_resolution']}")
+                print(f"    (Originally recommended for GW{strategy['original_gameweek']})")
+
             if chip_name == 'triple_captain' and 'best_captain' in strategy:
                 print(f"    Best captain: {strategy['best_captain']}")
 
+        # Show rejected chips due to conflicts
+        if has_conflicts and 'rejected_chips' in chip_strategy['_conflicts']:
+            rejected = chip_strategy['_conflicts']['rejected_chips']
+            if rejected:
+                print(f"\n  ⚠️  Conflict Warning:")
+                for chip in rejected:
+                    print(f"    - {chip['chip_name'].upper().replace('_', ' ')}: Could not be scheduled")
+                    print(f"      (Wanted GW{chip['original_gw']}, but higher-value chip takes priority)")
+
     # Starting XI for next week
-    step_num = 6 if user_team_config.team_id else 5
-    print(f"\n[{step_num}/6] Optimizing starting XI for GW{next_gw}...")
+    final_step = 7 if user_team_config.team_id else 6
+    print(f"\n[{final_step}/{final_step}] Optimizing starting XI for GW{next_gw}...")
     optimizer = SquadOptimizer(gameweek_data)
     starting_result = optimizer.optimize_starting_xi(
         current_squad,

@@ -187,35 +187,42 @@ class TransferOptimizer:
                 horizon_points[player_id.id] = total_ep
 
             # Suggest transfers
+            # For first gameweek, use all available free transfers (up to max 5)
+            # For subsequent gameweeks, use 1 transfer per week
+            num_transfers_to_make = min(working_free_transfers, 5) if gw_offset == 0 else 1
+
             suggestion = self.suggest_transfers(
                 working_squad,
                 horizon_points,
                 working_free_transfers,
                 working_budget,
-                num_transfers=1,  # Conservative: 1 transfer per week
+                num_transfers=num_transfers_to_make,
                 num_gameweeks=3
             )
 
             if suggestion and suggestion['recommended']:
-                transfer = suggestion['transfers'][0]
+                # Apply all suggested transfers
+                transfers_made = []
+                for transfer in suggestion['transfers']:
+                    # Apply transfer
+                    working_squad.remove(transfer['player_out'].id)
+                    working_squad.append(transfer['player_in'].id)
+                    working_budget -= transfer['price_diff']
 
-                # Apply transfer
-                working_squad.remove(transfer['player_out'].id)
-                working_squad.append(transfer['player_in'].id)
-                working_budget -= transfer['price_diff']
-
-                # Update free transfers
-                working_free_transfers = max(0, working_free_transfers - 1)
-
-                transfer_plan[gw] = {
-                    'action': 'TRANSFER',
-                    'transfers': [{
+                    transfers_made.append({
                         'out': transfer['player_out'].name,
                         'in': transfer['player_in'].name,
                         'value': transfer['value'],
-                        'cost': suggestion['transfer_cost']
-                    }],
-                    'free_transfers_used': 1,
+                    })
+
+                # Update free transfers
+                num_transfers_made = len(suggestion['transfers'])
+                working_free_transfers = max(0, working_free_transfers - num_transfers_made)
+
+                transfer_plan[gw] = {
+                    'action': 'TRANSFER',
+                    'transfers': transfers_made,
+                    'free_transfers_used': min(num_transfers_made, free_transfers if gw_offset == 0 else working_free_transfers + num_transfers_made),
                     'points_hit': suggestion['transfer_cost'],
                     'expected_gain': suggestion['net_value']
                 }
@@ -288,12 +295,15 @@ class TransferOptimizer:
 
         Returns list of transfer options ranked by value.
         """
+        # Use all available free transfers (up to max 5)
+        num_transfers_to_suggest = min(free_transfers, 5)
+
         suggestion = self.suggest_transfers(
             current_squad,
             expected_points,
             free_transfers,
             budget_remaining,
-            num_transfers=1,
+            num_transfers=num_transfers_to_suggest,
             num_gameweeks=3
         )
 

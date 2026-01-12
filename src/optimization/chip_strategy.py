@@ -346,6 +346,104 @@ class ChipStrategyOptimizer:
 
         return evaluations
 
+    def resolve_chip_conflicts(
+        self,
+        chip_recommendations: Dict[str, Dict]
+    ) -> Dict[str, Dict]:
+        """
+        Resolve conflicts where multiple chips are recommended for the same gameweek.
+        FPL only allows one chip per gameweek.
+
+        Args:
+            chip_recommendations: Dict with chip recommendations from get_chip_strategy
+
+        Returns:
+            Resolved recommendations with at most one chip per gameweek
+        """
+        # Build a mapping of gameweek -> list of (chip_name, value, data)
+        gw_to_chips = {}
+
+        for chip_name, chip_data in chip_recommendations.items():
+            best_gw = chip_data['best_gameweek']
+            best_value = chip_data['best_value']
+
+            if best_gw not in gw_to_chips:
+                gw_to_chips[best_gw] = []
+
+            gw_to_chips[best_gw].append({
+                'chip_name': chip_name,
+                'value': best_value,
+                'data': chip_data
+            })
+
+        # Resolve conflicts: pick highest value chip for each gameweek
+        resolved_recommendations = {}
+        used_gameweeks = set()
+        rejected_chips = []  # Chips that lost conflict resolution
+
+        # Sort chips by value (highest first) to prioritize best chips
+        all_chips = []
+        for chip_name, chip_data in chip_recommendations.items():
+            all_chips.append({
+                'chip_name': chip_name,
+                'best_gw': chip_data['best_gameweek'],
+                'value': chip_data['best_value'],
+                'data': chip_data
+            })
+        all_chips.sort(key=lambda x: x['value'], reverse=True)
+
+        # Assign chips to gameweeks (highest value first)
+        for chip in all_chips:
+            chip_name = chip['chip_name']
+            best_gw = chip['best_gw']
+
+            if best_gw in used_gameweeks:
+                # Conflict: try to find alternative gameweek for this chip
+                evaluations = chip['data']['evaluations']
+                alternative_found = False
+
+                # Sort gameweeks by value
+                sorted_gws = sorted(
+                    evaluations.items(),
+                    key=lambda x: x[1].get('value' if chip_name != 'wildcard' else 'total_value', 0),
+                    reverse=True
+                )
+
+                for alt_gw, alt_eval in sorted_gws:
+                    if alt_gw not in used_gameweeks:
+                        # Found alternative gameweek
+                        resolved_recommendations[chip_name] = {
+                            **chip['data'],
+                            'best_gameweek': alt_gw,
+                            'best_value': alt_eval.get('value' if chip_name != 'wildcard' else 'total_value', 0),
+                            'conflict_resolution': f"Moved from GW{best_gw} (conflict with higher-value chip)",
+                            'original_gameweek': best_gw
+                        }
+                        used_gameweeks.add(alt_gw)
+                        alternative_found = True
+                        break
+
+                if not alternative_found:
+                    # No alternative found, chip is rejected
+                    rejected_chips.append({
+                        'chip_name': chip_name,
+                        'original_gw': best_gw,
+                        'value': chip['value']
+                    })
+            else:
+                # No conflict, use original recommendation
+                resolved_recommendations[chip_name] = chip['data']
+                used_gameweeks.add(best_gw)
+
+        # Add metadata about conflicts
+        if rejected_chips:
+            resolved_recommendations['_conflicts'] = {
+                'rejected_chips': rejected_chips,
+                'message': 'Some chips could not be scheduled due to gameweek conflicts'
+            }
+
+        return resolved_recommendations
+
     def get_chip_strategy(
         self,
         current_squad: List[int],
@@ -430,4 +528,7 @@ class ChipStrategyOptimizer:
                 'recommended': best_fh_gw[1]['recommended']
             }
 
-        return recommendations
+        # Resolve conflicts: only one chip per gameweek allowed
+        resolved_recommendations = self.resolve_chip_conflicts(recommendations)
+
+        return resolved_recommendations
