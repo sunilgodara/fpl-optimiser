@@ -4,6 +4,8 @@ Enhanced prediction engine with historical data and advanced features.
 from typing import Dict, List, Optional, Tuple
 import statistics
 from ..data.models import Player, Team, Fixture, GameweekData
+from .rotation_predictor import RotationPredictor
+from .xg_integrator import XGIntegrator
 
 
 class AdvancedForecaster:
@@ -37,11 +39,25 @@ class AdvancedForecaster:
         'FWD': {'defence': 0.05, 'attack': 0.95},
     }
 
-    def __init__(self, gameweek_data: GameweekData, api_client):
+    def __init__(self, gameweek_data: GameweekData, api_client, use_rotation_model: bool = True, use_xg_model: bool = True):
         self.data = gameweek_data
         self.api_client = api_client
         self.team_fixtures = self._organize_fixtures_by_team()
         self.player_history_cache = {}
+
+        # Initialize rotation predictor (Issue #8)
+        self.use_rotation_model = use_rotation_model
+        if use_rotation_model:
+            self.rotation_predictor = RotationPredictor(gameweek_data)
+        else:
+            self.rotation_predictor = None
+
+        # Initialize xG integrator (Issue #7)
+        self.use_xg_model = use_xg_model
+        if use_xg_model:
+            self.xg_integrator = XGIntegrator(gameweek_data, api_client)
+        else:
+            self.xg_integrator = None
 
     def _organize_fixtures_by_team(self) -> Dict[int, List[Fixture]]:
         """Organize fixtures by team ID."""
@@ -328,8 +344,29 @@ class AdvancedForecaster:
             0.85 + 0.15 * consistency  # Min 85% for inconsistent players
         )
 
+        # Apply rotation risk adjustment (Issue #8)
+        rotation_adjusted = consistency_adjusted
+        rotation_risk = 0.0
+        if self.use_rotation_model and self.rotation_predictor:
+            rotation_risk = self.rotation_predictor.calculate_rotation_risk(
+                player,
+                self.data.current_gameweek
+            )
+            # Rotation risk reduces expected points
+            rotation_adjusted = consistency_adjusted * (1 - rotation_risk)
+
+        # Apply xG adjustment (Issue #7)
+        xg_adjusted = rotation_adjusted
+        xg_variance = 0.0
+        if self.use_xg_model and self.xg_integrator:
+            xg_adjusted, xg_breakdown = self.xg_integrator.adjust_prediction_for_xg(
+                player,
+                rotation_adjusted
+            )
+            xg_variance = xg_breakdown.get('variance', 0.0)
+
         # Scale to number of gameweeks
-        total_prediction = consistency_adjusted * num_gameweeks
+        total_prediction = xg_adjusted * num_gameweeks
 
         # Ensure minimum for players who play
         if minutes_reliability > 0.5:
@@ -343,6 +380,8 @@ class AdvancedForecaster:
                 'fixture_mult': round(fixture_mult, 2),
                 'minutes_reliability': round(minutes_reliability, 2),
                 'consistency': round(consistency, 2),
+                'rotation_risk': round(rotation_risk, 3),
+                'xg_variance': round(xg_variance, 2),
             }
 
         return round(total_prediction, 2)
