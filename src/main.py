@@ -120,7 +120,7 @@ def run_basic_optimizer(config):
     }
 
 
-def run_advanced_optimizer(config, user_team_config):
+def run_advanced_optimizer(config, user_team_config, args):
     """Run advanced optimization with transfers and chip strategy."""
     print("=" * 80)
     print("FPL OPTIMIZER - Advanced Strategy Planning")
@@ -338,7 +338,7 @@ def main():
     if args.mode == 'basic':
         run_basic_optimizer(config)
     else:
-        run_advanced_optimizer(config, user_team_config)
+        run_advanced_optimizer(config, user_team_config, args)
 
 
 if __name__ == "__main__":
