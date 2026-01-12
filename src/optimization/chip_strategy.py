@@ -89,11 +89,16 @@ class ChipStrategyOptimizer:
         Returns:
             Dict mapping gameweek -> evaluation metrics
         """
-        current_gw = self.data.current_gameweek
+        # Determine starting gameweek from expected_points_by_week
+        if expected_points_by_week:
+            start_gw = min(expected_points_by_week.keys())
+        else:
+            start_gw = self.data.current_gameweek
+
         double_gameweeks = self._get_double_gameweeks(horizon)
         wildcard_evaluations = {}
 
-        for gw in range(current_gw, current_gw + horizon):
+        for gw in range(start_gw, start_gw + horizon):
             # Calculate squad health (% of players performing well)
             squad_players = [self.data.get_player_by_id(pid) for pid in current_squad]
             healthy_count = sum(1 for p in squad_players if p.is_available())
@@ -149,7 +154,8 @@ class ChipStrategyOptimizer:
         self,
         squad: List[int],
         expected_points: Dict[int, float],
-        horizon: int = 10
+        horizon: int = 10,
+        start_gw: Optional[int] = None
     ) -> Dict[int, Dict]:
         """
         Evaluate best gameweeks to use Bench Boost.
@@ -162,13 +168,15 @@ class ChipStrategyOptimizer:
         Returns:
             Dict mapping gameweek -> evaluation
         """
-        current_gw = self.data.current_gameweek
+        if start_gw is None:
+            start_gw = self.data.current_gameweek
+
         double_gameweeks = self._get_double_gameweeks(horizon)
         evaluations = {}
 
         squad_players = [self.data.get_player_by_id(pid) for pid in squad]
 
-        for gw in range(current_gw, current_gw + horizon):
+        for gw in range(start_gw, start_gw + horizon):
             # Count how many squad players have double gameweeks
             dgw_count = 0
             for player in squad_players:
@@ -210,7 +218,8 @@ class ChipStrategyOptimizer:
     def evaluate_triple_captain(
         self,
         expected_points: Dict[int, float],
-        horizon: int = 10
+        horizon: int = 10,
+        start_gw: Optional[int] = None
     ) -> Dict[int, Dict]:
         """
         Evaluate best gameweeks to use Triple Captain.
@@ -223,11 +232,13 @@ class ChipStrategyOptimizer:
         Returns:
             Dict mapping gameweek -> evaluation with best captain choice
         """
-        current_gw = self.data.current_gameweek
+        if start_gw is None:
+            start_gw = self.data.current_gameweek
+
         double_gameweeks = self._get_double_gameweeks(horizon)
         evaluations = {}
 
-        for gw in range(current_gw, current_gw + horizon):
+        for gw in range(start_gw, start_gw + horizon):
             # Find best captain option for this gameweek
             best_captain = None
             best_ep = 0
@@ -287,14 +298,19 @@ class ChipStrategyOptimizer:
         Returns:
             Dict mapping gameweek -> evaluation
         """
-        current_gw = self.data.current_gameweek
+        # Determine starting gameweek from expected_points_by_week
+        if expected_points_by_week:
+            start_gw = min(expected_points_by_week.keys())
+        else:
+            start_gw = self.data.current_gameweek
+
         blank_gameweeks = self._get_blank_gameweeks(horizon)
         double_gameweeks = self._get_double_gameweeks(horizon)
         evaluations = {}
 
         squad_players = [self.data.get_player_by_id(pid) for pid in current_squad]
 
-        for gw in range(current_gw, current_gw + horizon):
+        for gw in range(start_gw, start_gw + horizon):
             # Count squad players affected by blanks
             blank_count = 0
             if gw in blank_gameweeks:
@@ -351,12 +367,18 @@ class ChipStrategyOptimizer:
         """
         recommendations = {}
 
+        # Determine starting gameweek from expected_points_by_week
+        if expected_points_by_week:
+            start_gw = min(expected_points_by_week.keys())
+        else:
+            start_gw = self.data.current_gameweek
+
         # Aggregate expected points for multi-week evaluations
         total_expected_points = {}
         for player in self.data.get_available_players():
             total_ep = sum(
                 expected_points_by_week.get(gw, {}).get(player.id, 0)
-                for gw in range(self.data.current_gameweek, self.data.current_gameweek + horizon)
+                for gw in range(start_gw, start_gw + horizon)
             )
             total_expected_points[player.id] = total_ep
 
@@ -375,7 +397,7 @@ class ChipStrategyOptimizer:
 
         if 'bboost' in available_chips:
             bb_eval = self.evaluate_bench_boost(
-                current_squad, total_expected_points, horizon
+                current_squad, total_expected_points, horizon, start_gw
             )
             best_bb_gw = max(bb_eval.items(), key=lambda x: x[1]['value'])
             recommendations['bench_boost'] = {
@@ -386,7 +408,7 @@ class ChipStrategyOptimizer:
             }
 
         if '3xc' in available_chips:
-            tc_eval = self.evaluate_triple_captain(total_expected_points, horizon)
+            tc_eval = self.evaluate_triple_captain(total_expected_points, horizon, start_gw)
             best_tc_gw = max(tc_eval.items(), key=lambda x: x[1]['value'])
             recommendations['triple_captain'] = {
                 'evaluations': tc_eval,

@@ -131,8 +131,14 @@ def run_advanced_optimizer(config, user_team_config, args):
     api_client = FPLAPIClient()
     gameweek_data = build_gameweek_data(api_client)
 
+    # Get the next gameweek for planning (the one with the upcoming deadline)
+    next_gw = api_client.get_next_gameweek()
+    if next_gw is None:
+        next_gw = gameweek_data.current_gameweek
+
     print(f"  - Loaded {len(gameweek_data.players)} players")
     print(f"  - Current gameweek: {gameweek_data.current_gameweek}")
+    print(f"  - Planning for: GW{next_gw} (next deadline)")
 
     # Fetch user's team if team_id provided
     if user_team_config.team_id:
@@ -165,10 +171,10 @@ def run_advanced_optimizer(config, user_team_config, args):
     print(f"\n[{'3' if user_team_config.team_id else '2'}/6] Generating advanced predictions...")
     forecaster = AdvancedForecaster(gameweek_data, api_client)
 
-    # Generate predictions for multiple gameweeks
+    # Generate predictions for multiple gameweeks starting from next gameweek
     expected_points_by_week = {}
     for gw_offset in range(config.chip_planning_horizon):
-        gw = gameweek_data.current_gameweek + gw_offset
+        gw = next_gw + gw_offset
         ep = forecaster.get_predictions_for_all_players(num_gameweeks=1)
         expected_points_by_week[gw] = ep
 
@@ -264,9 +270,9 @@ def run_advanced_optimizer(config, user_team_config, args):
             if chip_name == 'triple_captain' and 'best_captain' in strategy:
                 print(f"    Best captain: {strategy['best_captain']}")
 
-    # Starting XI for current week
+    # Starting XI for next week
     step_num = 6 if user_team_config.team_id else 5
-    print(f"\n[{step_num}/6] Optimizing starting XI for GW{gameweek_data.current_gameweek}...")
+    print(f"\n[{step_num}/6] Optimizing starting XI for GW{next_gw}...")
     optimizer = SquadOptimizer(gameweek_data)
     starting_result = optimizer.optimize_starting_xi(
         current_squad,

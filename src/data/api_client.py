@@ -76,6 +76,27 @@ class FPLAPIClient:
 
         return None
 
+    def get_next_gameweek(self) -> Optional[int]:
+        """
+        Get the next gameweek to plan for.
+
+        This returns the gameweek with the next deadline, which is what
+        you should be planning transfers and lineup for.
+        """
+        gameweeks = self.get_gameweeks()
+
+        # Look for the next gameweek (upcoming deadline)
+        for gw in gameweeks:
+            if gw['is_next']:
+                return gw['id']
+
+        # If no 'is_next', fall back to current + 1
+        current = self.get_current_gameweek()
+        if current:
+            return current + 1
+
+        return None
+
     def get_fixtures(self) -> List[Dict]:
         """Get all fixtures (past and future)."""
         return self._get("fixtures/")

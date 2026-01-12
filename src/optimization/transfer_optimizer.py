@@ -151,7 +151,13 @@ class TransferOptimizer:
         Returns:
             Transfer plan for each gameweek
         """
-        current_gw = self.data.current_gameweek
+        # Determine starting gameweek from expected_points_by_week keys
+        # (This handles cases where we're planning for next GW, not current)
+        if expected_points_by_week:
+            start_gw = min(expected_points_by_week.keys())
+        else:
+            start_gw = self.data.current_gameweek
+
         transfer_plan = {}
 
         working_squad = current_squad.copy()
@@ -159,7 +165,7 @@ class TransferOptimizer:
         working_budget = budget_remaining
 
         for gw_offset in range(planning_horizon):
-            gw = current_gw + gw_offset
+            gw = start_gw + gw_offset
 
             # Check if wildcard gameweek
             if use_wildcard_gw and gw == use_wildcard_gw:
@@ -175,7 +181,7 @@ class TransferOptimizer:
             horizon_points = {}
             for player_id in self.data.get_available_players():
                 total_ep = 0
-                for future_gw in range(gw, min(gw + 3, current_gw + planning_horizon)):
+                for future_gw in range(gw, min(gw + 3, start_gw + planning_horizon)):
                     if future_gw in expected_points_by_week:
                         total_ep += expected_points_by_week[future_gw].get(player_id.id, 0)
                 horizon_points[player_id.id] = total_ep
