@@ -228,6 +228,9 @@ def run_advanced_optimizer(config, user_team_config, args):
     transfer_optimizer = TransferOptimizer(gameweek_data)
 
     # SCENARIO-BASED RECOMMENDATIONS
+    squad_for_starting_xi = current_squad  # Default to current squad
+    scenario_used = "current"  # Track which scenario is being shown
+
     if wildcard_recommended_for_next_gw:
         print("\n" + "=" * 80)
         print("WILDCARD RECOMMENDED FOR GW{next_gw}".format(next_gw=next_gw))
@@ -247,6 +250,10 @@ def run_advanced_optimizer(config, user_team_config, args):
             print(f"  Expected value: +{chip_strategy['wildcard']['best_value']:.1f} points")
             print(f"  Total squad expected points: {wildcard_squad['total_expected_points']:.2f}")
             print(f"  Squad cost: £{wildcard_squad['total_cost']:.1f}m")
+
+            # Use wildcard squad for final starting XI (since it's recommended)
+            squad_for_starting_xi = wildcard_squad['squad']
+            scenario_used = "wildcard"
 
         # Scenario B: Don't use Wildcard (regular transfers)
         print(f"\n📋 SCENARIO B: Save Wildcard, make regular transfers")
@@ -360,10 +367,14 @@ def run_advanced_optimizer(config, user_team_config, args):
 
     # Starting XI for next week
     final_step = 7 if user_team_config.team_id else 6
-    print(f"\n[{final_step}/{final_step}] Optimizing starting XI for GW{next_gw}...")
+    if scenario_used == "wildcard":
+        print(f"\n[{final_step}/{final_step}] Optimizing starting XI for GW{next_gw} (Wildcard Squad - Scenario A)...")
+    else:
+        print(f"\n[{final_step}/{final_step}] Optimizing starting XI for GW{next_gw} (Current Squad)...")
+
     optimizer = SquadOptimizer(gameweek_data)
     starting_result = optimizer.optimize_starting_xi(
-        current_squad,
+        squad_for_starting_xi,
         expected_points,
         verbose=False
     )
@@ -373,8 +384,11 @@ def run_advanced_optimizer(config, user_team_config, args):
         print(f"  - Captain: {captain.name}")
         print(f"  - Expected points: {starting_result['total_expected_points']:.2f}")
 
+        if scenario_used == "wildcard":
+            print(f"  - Note: This is the optimal starting XI from the Wildcard squad (Scenario A)")
+
         optimizer.display_squad(
-            current_squad,
+            squad_for_starting_xi,
             expected_points,
             starting_xi=starting_result['starting_xi'],
             captain_id=starting_result['captain']
