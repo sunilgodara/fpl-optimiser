@@ -193,15 +193,21 @@ Build the **best FPL optimizer in the world** - practical, high-quality suggesti
 - [x] Issue #6: Better fixture analysis (team form)
 - [x] Issue #11: Bench fodder strategy
 
-### Medium-term (Next Week)
+### Phase 3 (Completed - Strategic Depth)
+- [x] Issue #9: Differential strategy (ownership weighting)
+- [x] Issue #10: Captaincy depth (3 options with reasoning)
+- [x] Issue #12: Template awareness (ownership analysis)
+
+### Medium-term (Next Phases)
 - [ ] Issue #5: Price change predictions
 - [ ] Issue #7: xG integration
 - [ ] Issue #8: Rotation modeling
-- [ ] Issue #12: Template awareness
+- [ ] Issue #13: Long-term season planning
+- [ ] Issue #14: Auto-sub handling
+- [ ] Issue #15: Bonus points modeling
 
-### Long-term (Next Month)
-- [ ] Phase 3 items (strategic depth)
-- [ ] Phase 4 items (polish)
+### Long-term (Polish & Enhancement)
+- [ ] Phase 4 items (visualization, explanations, learning)
 
 ### Future Enhancements (Research & Development)
 - [ ] **Prediction Confidence Modeling**: Add confidence intervals/variance to predictions
