@@ -66,11 +66,11 @@ class XGIntegrator:
                 if not recent_games:
                     return None
 
-                # Calculate average ICT stats
-                avg_influence = statistics.mean(g.get('influence', 0) for g in recent_games)
-                avg_creativity = statistics.mean(g.get('creativity', 0) for g in recent_games)
-                avg_threat = statistics.mean(g.get('threat', 0) for g in recent_games)
-                avg_ict_index = statistics.mean(g.get('ict_index', 0) for g in recent_games)
+                # Calculate average ICT stats (convert strings to floats)
+                avg_influence = statistics.mean(float(g.get('influence', 0)) for g in recent_games)
+                avg_creativity = statistics.mean(float(g.get('creativity', 0)) for g in recent_games)
+                avg_threat = statistics.mean(float(g.get('threat', 0)) for g in recent_games)
+                avg_ict_index = statistics.mean(float(g.get('ict_index', 0)) for g in recent_games)
 
                 # Calculate per-90 stats
                 total_minutes = sum(g.get('minutes', 0) for g in recent_games)
