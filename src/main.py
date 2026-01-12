@@ -134,8 +134,26 @@ def run_advanced_optimizer(config, user_team_config):
     print(f"  - Loaded {len(gameweek_data.players)} players")
     print(f"  - Current gameweek: {gameweek_data.current_gameweek}")
 
+    # Fetch user's team if team_id provided
+    if user_team_config.team_id:
+        print(f"\n[2/6] Fetching your FPL team (ID: {user_team_config.team_id})...")
+        team_data = api_client.get_team_current_squad(user_team_config.team_id)
+        if team_data:
+            user_team_config.current_squad = team_data['squad']
+            user_team_config.bank = team_data['bank']
+            user_team_config.free_transfers = team_data.get('free_transfers', 1)
+            print(f"  - Team: {team_data['team_name']}")
+            print(f"  - Manager: {team_data['player_name']}")
+            print(f"  - Overall Rank: {team_data['overall_rank']:,}")
+            print(f"  - Total Points: {team_data['total_points']}")
+            print(f"  - Squad Value: £{team_data['squad_value']:.1f}m")
+            print(f"  - Bank: £{team_data['bank']:.1f}m")
+            print(f"  - Free Transfers: {user_team_config.free_transfers}")
+        else:
+            print(f"  - Could not fetch team data. Will optimize new squad.")
+
     # Advanced predictions
-    print(f"\n[2/6] Generating advanced predictions...")
+    print(f"\n[{'3' if user_team_config.team_id else '2'}/6] Generating advanced predictions...")
     forecaster = AdvancedForecaster(gameweek_data, api_client)
 
     # Generate predictions for multiple gameweeks
@@ -153,11 +171,12 @@ def run_advanced_optimizer(config, user_team_config):
     print(f"  - Generated {config.chip_planning_horizon}-week forecast")
 
     # Get or optimize squad
+    step_num = 4 if user_team_config.team_id else 3
     if user_team_config.current_squad:
-        print(f"\n[3/6] Using your current squad ({len(user_team_config.current_squad)} players)...")
+        print(f"\n[{step_num}/6] Using your current squad ({len(user_team_config.current_squad)} players)...")
         current_squad = user_team_config.current_squad
     else:
-        print("\n[3/6] No current squad - optimizing new squad...")
+        print(f"\n[{step_num}/6] No current squad provided - optimizing new squad...")
         optimizer = SquadOptimizer(gameweek_data)
         squad_result = optimizer.optimize_squad(expected_points, verbose=False)
         if not squad_result:
@@ -167,7 +186,8 @@ def run_advanced_optimizer(config, user_team_config):
         print(f"  - Optimized squad: {squad_result['total_expected_points']:.2f} EP")
 
     # Transfer planning
-    print(f"\n[4/6] Planning transfers (next {config.transfer_planning_horizon} weeks)...")
+    step_num = 5 if user_team_config.team_id else 4
+    print(f"\n[{step_num}/6] Planning transfers (next {config.transfer_planning_horizon} weeks)...")
     transfer_optimizer = TransferOptimizer(gameweek_data)
 
     # Get transfer recommendations
@@ -213,7 +233,7 @@ def run_advanced_optimizer(config, user_team_config):
 
     # Chip strategy
     if config.plan_chips:
-        print(f"\n[5/6] Analyzing chip strategy...")
+        print(f"\n  Analyzing chip strategy...")
         chip_optimizer = ChipStrategyOptimizer(gameweek_data)
 
         chip_strategy = chip_optimizer.get_chip_strategy(
@@ -236,7 +256,8 @@ def run_advanced_optimizer(config, user_team_config):
                 print(f"    Best captain: {strategy['best_captain']}")
 
     # Starting XI for current week
-    print("\n[6/6] Optimizing starting XI for GW{}...".format(gameweek_data.current_gameweek))
+    step_num = 6 if user_team_config.team_id else 5
+    print(f"\n[{step_num}/6] Optimizing starting XI for GW{gameweek_data.current_gameweek}...")
     optimizer = SquadOptimizer(gameweek_data)
     starting_result = optimizer.optimize_starting_xi(
         current_squad,

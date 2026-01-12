@@ -110,3 +110,70 @@ class FPLAPIClient:
         """Get position type information (GK, DEF, MID, FWD)."""
         data = self.get_bootstrap_static()
         return data['element_types']
+
+    def get_team_info(self, team_id: int) -> Dict:
+        """
+        Get information about a specific FPL team.
+
+        Args:
+            team_id: The FPL team ID
+
+        Returns:
+            Dict with team information including name, rank, points, etc.
+        """
+        return self._get(f"entry/{team_id}/")
+
+    def get_team_picks(self, team_id: int, gameweek: Optional[int] = None) -> Dict:
+        """
+        Get the squad picks for a specific FPL team in a gameweek.
+
+        Args:
+            team_id: The FPL team ID
+            gameweek: The gameweek number (uses current if None)
+
+        Returns:
+            Dict with picks, transfers, and chips information
+        """
+        if gameweek is None:
+            gameweek = self.get_current_gameweek()
+
+        return self._get(f"entry/{team_id}/event/{gameweek}/picks/")
+
+    def get_team_current_squad(self, team_id: int) -> Dict:
+        """
+        Get the current squad for an FPL team.
+
+        Returns:
+            Dict with 'squad' (list of player IDs), 'bank' (money remaining),
+            'squad_value', 'free_transfers'
+        """
+        current_gw = self.get_current_gameweek()
+        if not current_gw:
+            return None
+
+        try:
+            # Get team info for bank and value
+            team_info = self.get_team_info(team_id)
+
+            # Get current picks
+            picks_data = self.get_team_picks(team_id, current_gw)
+
+            # Extract squad (all 15 players)
+            squad = [pick['element'] for pick in picks_data['picks']]
+
+            # Get transfer info
+            transfers = picks_data.get('entry_history', {})
+
+            return {
+                'squad': squad,
+                'bank': team_info['last_deadline_bank'] / 10.0,  # Convert from tenths
+                'squad_value': team_info['last_deadline_value'] / 10.0,
+                'free_transfers': transfers.get('event_transfers', 1),
+                'total_points': team_info['summary_overall_points'],
+                'overall_rank': team_info['summary_overall_rank'],
+                'team_name': team_info['name'],
+                'player_name': f"{team_info['player_first_name']} {team_info['player_last_name']}"
+            }
+        except Exception as e:
+            print(f"Warning: Could not fetch team data: {str(e)}")
+            return None
