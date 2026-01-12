@@ -133,8 +133,9 @@ class RotationPredictor:
         # Adjust for recent minutes (if player played 90min recently, higher rotation risk)
         minutes_multiplier = 1.0
         if player.minutes > 0:
-            # If averaging close to 90 minutes, higher rotation risk
-            avg_minutes = player.minutes / max(player.games_played, 1) if player.games_played > 0 else 0
+            # Estimate games played from total minutes (assume avg 60+ min per appearance)
+            estimated_games = max(1, player.minutes // 60)
+            avg_minutes = player.minutes / estimated_games
             if avg_minutes > 80:
                 minutes_multiplier = 1.15  # 15% more rotation risk for high-minute players
 
