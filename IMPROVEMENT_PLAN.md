@@ -188,10 +188,10 @@ Build the **best FPL optimizer in the world** - practical, high-quality suggesti
 - [x] Fix Issue #2: Chip conflict resolution
 - [x] Fix Issue #3: Integrate chips → transfers flow
 
-### Short-term (Next Session)
-- [ ] Issue #4: Player selling values
-- [ ] Issue #6: Better fixture analysis
-- [ ] Issue #11: Bench fodder strategy
+### Short-term (Completed Phase 2)
+- [x] Issue #4: Player selling values
+- [x] Issue #6: Better fixture analysis (team form)
+- [x] Issue #11: Bench fodder strategy
 
 ### Medium-term (Next Week)
 - [ ] Issue #5: Price change predictions
