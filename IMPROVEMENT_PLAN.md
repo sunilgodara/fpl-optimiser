@@ -198,12 +198,15 @@ Build the **best FPL optimizer in the world** - practical, high-quality suggesti
 - [x] Issue #10: Captaincy depth (3 options with reasoning)
 - [x] Issue #12: Template awareness (ownership analysis)
 
+### Polish Phase (Completed - Professional Quality)
+- [x] Issue #14: Vice-captain selection (auto-sub handling)
+- [x] Enhanced transfer reasoning (detailed explanations with fixtures, form, ownership)
+
 ### Medium-term (Next Phases)
 - [ ] Issue #5: Price change predictions
 - [ ] Issue #7: xG integration
 - [ ] Issue #8: Rotation modeling
 - [ ] Issue #13: Long-term season planning
-- [ ] Issue #14: Auto-sub handling
 - [ ] Issue #15: Bonus points modeling
 
 ### Long-term (Polish & Enhancement)
