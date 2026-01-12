@@ -41,18 +41,28 @@ class SquadOptimizer:
         self,
         expected_points: Dict[int, float],
         verbose: bool = True,
-        bench_weight: float = 0.1
+        bench_weight: float = 0.1,
+        differential_weight: float = 0.0
     ) -> Optional[Dict]:
         """
-        Optimize squad selection to maximize expected points with bench fodder strategy.
+        Optimize squad selection to maximize expected points with bench fodder strategy
+        and optional differential weighting.
 
         The optimizer now prioritizes a strong starting XI with cheap bench players,
         rather than spreading budget evenly across all 15 players.
+
+        Differential strategy (if differential_weight > 0):
+        - Low ownership players get bonus weighting
+        - Formula: adjusted_value = EP * (1 + differential_weight * (1 - ownership/100))
+        - Example: 5% owned player with 0.1 weight = EP * 1.095
+        - Helps climb ranks by picking players others don't have
 
         Args:
             expected_points: Dict mapping player_id -> expected_points
             verbose: Print optimization details
             bench_weight: Weight for bench players (0.1 = bench players worth 10% of starters)
+            differential_weight: Weight for differential picks (0.0 = ignore ownership,
+                                0.1 = moderate differential boost, 0.25 = aggressive)
 
         Returns:
             Dict with 'squad' (list of player IDs) and 'total_expected_points'
@@ -96,11 +106,30 @@ class SquadOptimizer:
                 else:
                     position_weights[player.id] = bench_weight
 
-        # Objective: Maximize weighted expected points (prioritizes strong starting XI)
+        # Apply differential weighting if enabled (Phase 3: Issue #9)
+        # Formula: adjusted_EP = EP * (1 + differential_weight * (1 - ownership/100))
+        # Low ownership players get bonus weighting for rank climbing
+        differential_adjusted_points = {}
+
+        for player in self.players:
+            base_ep = expected_points.get(player.id, 0)
+
+            if differential_weight > 0:
+                # Calculate differential multiplier
+                ownership_decimal = player.selected_by_percent / 100.0
+                differential_multiplier = 1 + differential_weight * (1 - ownership_decimal)
+                adjusted_ep = base_ep * differential_multiplier
+            else:
+                adjusted_ep = base_ep
+
+            differential_adjusted_points[player.id] = adjusted_ep
+
+        # Objective: Maximize weighted expected points with differential bonus
+        # (prioritizes strong starting XI with optional differential strategy)
         prob += pulp.lpSum([
-            expected_points.get(player.id, 0) * position_weights.get(player.id, 1.0) * player_vars[player.id]
+            differential_adjusted_points[player.id] * position_weights.get(player.id, 1.0) * player_vars[player.id]
             for player in self.players
-        ]), "Weighted_Expected_Points"
+        ]), "Weighted_Expected_Points_With_Differentials"
 
         # Constraint 1: Squad size = 15
         prob += pulp.lpSum([

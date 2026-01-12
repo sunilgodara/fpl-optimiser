@@ -64,7 +64,11 @@ def run_basic_optimizer(config):
     # Optimize squad
     print("\n[3/5] Optimizing squad selection...")
     optimizer = SquadOptimizer(gameweek_data)
-    squad_result = optimizer.optimize_squad(expected_points, verbose=False)
+    squad_result = optimizer.optimize_squad(
+        expected_points,
+        verbose=False,
+        differential_weight=config.differential_weight
+    )
 
     if not squad_result:
         print("ERROR: Squad optimization failed!")
@@ -140,6 +144,17 @@ def run_advanced_optimizer(config, user_team_config, args):
     print(f"  - Current gameweek: {gameweek_data.current_gameweek}")
     print(f"  - Planning for: GW{next_gw} (next deadline)")
 
+    # Show differential strategy status (Phase 3: Issue #9)
+    if config.differential_weight > 0:
+        if config.differential_weight >= 0.2:
+            strategy_label = "AGGRESSIVE differential hunting"
+        elif config.differential_weight >= 0.1:
+            strategy_label = "Moderate differential strategy"
+        else:
+            strategy_label = "Light differential weighting"
+        print(f"  - Strategy: {strategy_label} (weight: {config.differential_weight})")
+        print(f"    └─ Low-ownership players will get bonus weighting for rank climbing")
+
     # Fetch user's team if team_id provided
     if user_team_config.team_id:
         print(f"\n[2/6] Fetching your FPL team (ID: {user_team_config.team_id})...")
@@ -205,7 +220,11 @@ def run_advanced_optimizer(config, user_team_config, args):
     else:
         print(f"\n[{step_num}/6] No current squad provided - optimizing new squad...")
         optimizer = SquadOptimizer(gameweek_data)
-        squad_result = optimizer.optimize_squad(expected_points, verbose=False)
+        squad_result = optimizer.optimize_squad(
+            expected_points,
+            verbose=False,
+            differential_weight=config.differential_weight
+        )
         if not squad_result:
             print("ERROR: Squad optimization failed!")
             return None
@@ -256,7 +275,11 @@ def run_advanced_optimizer(config, user_team_config, args):
 
         # Optimize squad with wildcard (unlimited transfers)
         optimizer = SquadOptimizer(gameweek_data)
-        wildcard_squad = optimizer.optimize_squad(expected_points, verbose=False)
+        wildcard_squad = optimizer.optimize_squad(
+            expected_points,
+            verbose=False,
+            differential_weight=config.differential_weight
+        )
 
         if wildcard_squad:
             print(f"  Expected value: +{chip_strategy['wildcard']['best_value']:.1f} points")
