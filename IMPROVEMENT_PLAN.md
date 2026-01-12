@@ -203,6 +203,15 @@ Build the **best FPL optimizer in the world** - practical, high-quality suggesti
 - [ ] Phase 3 items (strategic depth)
 - [ ] Phase 4 items (polish)
 
+### Future Enhancements (Research & Development)
+- [ ] **Prediction Confidence Modeling**: Add confidence intervals/variance to predictions
+  - Model uncertainty that increases over time (GW22 more certain than GW24)
+  - Use prediction variance for risk-aware optimization
+  - Better than time discounting: doesn't devalue future, just accounts for uncertainty
+  - Research-backed approach vs arbitrary discounting
+- [ ] **Scenario Analysis**: Best case / worst case predictions
+- [ ] **Risk Management**: Variance-aware optimization (high floor vs high ceiling players)
+
 ---
 
 ## Success Metrics

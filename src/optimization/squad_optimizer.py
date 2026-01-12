@@ -306,6 +306,276 @@ class SquadOptimizer:
             'total_expected_points': total_points
         }
 
+    def get_captaincy_options(
+        self,
+        squad_player_ids: List[int],
+        expected_points: Dict[int, float],
+        num_options: int = 3
+    ) -> List[Dict]:
+        """
+        Get top captaincy options with detailed reasoning.
+
+        Provides 2-3 captain choices with analysis of:
+        - Expected points (ceiling)
+        - Consistency (floor/reliability)
+        - Fixture quality
+        - Risk profile (safe vs differential)
+
+        Args:
+            squad_player_ids: List of player IDs in squad
+            expected_points: Dict mapping player_id -> expected_points
+            num_options: Number of captain options to return (default 3)
+
+        Returns:
+            List of captain option dicts with reasoning
+        """
+        squad_players = [self.data.get_player_by_id(pid) for pid in squad_player_ids]
+
+        # Calculate captain metrics for each player
+        captain_candidates = []
+
+        for player in squad_players:
+            ep = expected_points.get(player.id, 0)
+
+            # Skip low EP players
+            if ep < 3.0:
+                continue
+
+            # Calculate consistency score from form variance
+            # High form = consistent, low variance in recent scores
+            consistency = min(player.form / max(ep, 1.0), 1.0) if ep > 0 else 0
+            consistency = max(0.5, consistency)  # Clamp between 0.5 and 1.0
+
+            # Calculate fixture quality (from recent games if available)
+            # Use points_per_game as proxy for fixture quality
+            fixture_score = min(player.points_per_game / 6.0, 1.0)  # Normalize to 1.0
+
+            # Risk profile: high EP + low consistency = differential (risky)
+            #               moderate EP + high consistency = safe
+            if ep >= 8.0 and consistency < 0.7:
+                risk_profile = "Differential"
+                risk_color = "🎯"
+            elif ep >= 6.0 and consistency >= 0.75:
+                risk_profile = "Safe"
+                risk_color = "🛡️"
+            else:
+                risk_profile = "Balanced"
+                risk_color = "⚖️"
+
+            # Overall captain score (weighted)
+            captain_score = (
+                ep * 0.50 +                    # 50% expected points
+                (ep * consistency) * 0.30 +    # 30% reliability (EP * consistency)
+                (ep * fixture_score) * 0.20    # 20% fixture quality
+            )
+
+            team = self.data.get_team_by_id(player.team_id)
+
+            captain_candidates.append({
+                'player_id': player.id,
+                'name': player.name,
+                'team': team.short_name if team else 'UNK',
+                'position': player.position,
+                'expected_points': ep,
+                'consistency': consistency,
+                'fixture_score': fixture_score,
+                'risk_profile': risk_profile,
+                'risk_color': risk_color,
+                'captain_score': captain_score,
+                'ownership': player.selected_by_percent,
+                'form': player.form,
+                'ppg': player.points_per_game
+            })
+
+        # Sort by captain score
+        captain_candidates.sort(key=lambda x: x['captain_score'], reverse=True)
+
+        # Generate reasoning for top N options
+        options = []
+        for i, candidate in enumerate(captain_candidates[:num_options]):
+            # Build reasoning based on metrics
+            reasons = []
+
+            # Expected points
+            if candidate['expected_points'] >= 8.0:
+                reasons.append(f"Very high ceiling ({candidate['expected_points']:.1f} EP)")
+            elif candidate['expected_points'] >= 6.0:
+                reasons.append(f"Good expected points ({candidate['expected_points']:.1f} EP)")
+            else:
+                reasons.append(f"Moderate expected points ({candidate['expected_points']:.1f} EP)")
+
+            # Consistency
+            if candidate['consistency'] >= 0.80:
+                reasons.append("Very consistent (high floor)")
+            elif candidate['consistency'] >= 0.65:
+                reasons.append("Reliable performer")
+            else:
+                reasons.append("Boom-or-bust potential")
+
+            # Ownership
+            if candidate['ownership'] < 10.0:
+                reasons.append(f"Low ownership ({candidate['ownership']:.1f}%) - big differential!")
+            elif candidate['ownership'] < 30.0:
+                reasons.append(f"Moderate ownership ({candidate['ownership']:.1f}%)")
+            else:
+                reasons.append(f"Template pick ({candidate['ownership']:.1f}% owned)")
+
+            # Form
+            if candidate['form'] > 6.0:
+                reasons.append(f"Excellent form ({candidate['form']:.1f})")
+            elif candidate['form'] > 4.0:
+                reasons.append(f"Good form ({candidate['form']:.1f})")
+
+            options.append({
+                'rank': i + 1,
+                'player_id': candidate['player_id'],
+                'name': candidate['name'],
+                'team': candidate['team'],
+                'position': candidate['position'],
+                'expected_points': candidate['expected_points'],
+                'risk_profile': candidate['risk_profile'],
+                'risk_color': candidate['risk_color'],
+                'ownership': candidate['ownership'],
+                'reasons': reasons,
+                'recommendation': self._get_captain_recommendation(i, candidate)
+            })
+
+        return options
+
+    def _get_captain_recommendation(self, rank: int, candidate: Dict) -> str:
+        """Generate recommendation text for captain option."""
+        if rank == 0:
+            # First option - safe/template recommendation
+            if candidate['ownership'] > 50.0:
+                return "Safest choice - template captain, minimal risk"
+            elif candidate['risk_profile'] == "Safe":
+                return "Best choice - high floor with good ceiling"
+            else:
+                return "Recommended - highest expected points"
+        elif rank == 1:
+            # Second option - alternative
+            if candidate['risk_profile'] == "Differential":
+                return "Differential option - higher risk, higher reward"
+            else:
+                return "Solid alternative if concerned about top pick"
+        else:
+            # Third option - punt/differential
+            if candidate['ownership'] < 20.0:
+                return "Differential punt - rank climbing potential"
+            else:
+                return "Contrarian choice - fade the template"
+
+    def analyze_template_matching(
+        self,
+        squad_player_ids: List[int],
+        ownership_threshold: float = 30.0
+    ) -> Dict:
+        """
+        Analyze how squad matches the template (most owned players).
+
+        Template = players owned by >30% of managers (configurable threshold)
+
+        Returns analysis of:
+        - Template match percentage
+        - Template players in squad
+        - Missing template players (you don't own)
+        - Differential players (low ownership)
+
+        Args:
+            squad_player_ids: List of player IDs in squad
+            ownership_threshold: Ownership % threshold for "template" (default 30%)
+
+        Returns:
+            Dict with template analysis
+        """
+        squad_players = [self.data.get_player_by_id(pid) for pid in squad_player_ids]
+
+        # Get all available players and identify template
+        all_players = self.data.get_available_players()
+
+        # Sort by ownership
+        all_players_sorted = sorted(
+            all_players,
+            key=lambda p: p.selected_by_percent,
+            reverse=True
+        )
+
+        # Identify template players (high ownership)
+        template_players = [
+            p for p in all_players_sorted
+            if p.selected_by_percent >= ownership_threshold
+        ][:30]  # Top 30 most owned
+
+        # Calculate template matching
+        template_ids = {p.id for p in template_players}
+        squad_ids = set(squad_player_ids)
+
+        template_in_squad = template_ids & squad_ids
+        template_missing = template_ids - squad_ids
+
+        template_match_pct = len(template_in_squad) / len(template_ids) * 100 if template_ids else 0
+
+        # Identify differentials in squad (low ownership)
+        differentials = [
+            p for p in squad_players
+            if p.selected_by_percent < 10.0
+        ]
+
+        # Sort template players by ownership for display
+        template_in_squad_players = [
+            p for p in squad_players
+            if p.id in template_in_squad
+        ]
+        template_in_squad_players.sort(key=lambda p: p.selected_by_percent, reverse=True)
+
+        template_missing_players = [
+            p for p in template_players
+            if p.id in template_missing
+        ]
+        template_missing_players.sort(key=lambda p: p.selected_by_percent, reverse=True)
+
+        differentials.sort(key=lambda p: p.selected_by_percent)
+
+        # Calculate average ownership
+        avg_ownership = sum(p.selected_by_percent for p in squad_players) / len(squad_players)
+
+        return {
+            'template_match_pct': template_match_pct,
+            'template_count': len(template_in_squad),
+            'template_total': len(template_ids),
+            'avg_ownership': avg_ownership,
+            'template_in_squad': [
+                {
+                    'name': p.name,
+                    'team': self.data.get_team_by_id(p.team_id).short_name,
+                    'position': p.position,
+                    'ownership': p.selected_by_percent,
+                    'price': p.price
+                }
+                for p in template_in_squad_players[:10]  # Show top 10
+            ],
+            'template_missing': [
+                {
+                    'name': p.name,
+                    'team': self.data.get_team_by_id(p.team_id).short_name,
+                    'position': p.position,
+                    'ownership': p.selected_by_percent,
+                    'price': p.price
+                }
+                for p in template_missing_players[:5]  # Show top 5 missing
+            ],
+            'differentials': [
+                {
+                    'name': p.name,
+                    'team': self.data.get_team_by_id(p.team_id).short_name,
+                    'position': p.position,
+                    'ownership': p.selected_by_percent,
+                    'price': p.price
+                }
+                for p in differentials[:5]  # Show top 5 differentials
+            ]
+        }
+
     def display_squad(
         self,
         squad_player_ids: List[int],

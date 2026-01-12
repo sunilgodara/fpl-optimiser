@@ -409,6 +409,65 @@ def run_advanced_optimizer(config, user_team_config, args):
             captain_id=starting_result['captain']
         )
 
+        # Captaincy analysis (Phase 3: Issue #10)
+        print("\n" + "="*80)
+        print("CAPTAINCY OPTIONS")
+        print("="*80)
+
+        captaincy_options = optimizer.get_captaincy_options(
+            squad_for_starting_xi,
+            expected_points,
+            num_options=3
+        )
+
+        for option in captaincy_options:
+            print(f"\n{option['risk_color']} Option #{option['rank']}: {option['name']} ({option['team']}) - {option['risk_profile']}")
+            print(f"   Expected Points: {option['expected_points']:.1f} | Ownership: {option['ownership']:.1f}%")
+            print(f"   {option['recommendation']}")
+            print(f"   Reasons:")
+            for reason in option['reasons']:
+                print(f"     • {reason}")
+
+        print("="*80)
+
+        # Template awareness (Phase 3: Issue #12)
+        print("\n" + "="*80)
+        print("TEMPLATE ANALYSIS")
+        print("="*80)
+
+        template_analysis = optimizer.analyze_template_matching(
+            squad_for_starting_xi,
+            ownership_threshold=30.0
+        )
+
+        print(f"\nYour squad matches {template_analysis['template_match_pct']:.1f}% of the template")
+        print(f"Template Players in Squad: {template_analysis['template_count']}/{template_analysis['template_total']}")
+        print(f"Average Squad Ownership: {template_analysis['avg_ownership']:.1f}%")
+
+        if template_analysis['template_match_pct'] < 50:
+            print("\n⚠️  Low template match - high risk/high reward strategy")
+        elif template_analysis['template_match_pct'] < 70:
+            print("\n✓ Balanced approach - some template, some differentials")
+        else:
+            print("\n✓ Template squad - safe for rank protection")
+
+        if template_analysis['template_in_squad']:
+            print("\n📊 Template Players You Own:")
+            for player in template_analysis['template_in_squad'][:5]:
+                print(f"   {player['name']:20} ({player['team']:4}) - {player['ownership']:.1f}% owned")
+
+        if template_analysis['template_missing']:
+            print("\n⚠️  High Ownership Players You're Missing:")
+            for player in template_analysis['template_missing'][:5]:
+                print(f"   {player['name']:20} ({player['team']:4}) - {player['ownership']:.1f}% owned")
+
+        if template_analysis['differentials']:
+            print("\n🎯 Your Differential Picks (<10% owned):")
+            for player in template_analysis['differentials'][:5]:
+                print(f"   {player['name']:20} ({player['team']:4}) - {player['ownership']:.1f}% owned")
+
+        print("="*80)
+
     print("\n" + "=" * 80)
     print("Advanced optimization complete!")
     print("=" * 80)
