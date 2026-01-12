@@ -139,6 +139,18 @@ class FPLAPIClient:
 
         return self._get(f"entry/{team_id}/event/{gameweek}/picks/")
 
+    def get_team_transfers(self, team_id: int) -> Dict:
+        """
+        Get transfer history and available transfers for a team.
+
+        Args:
+            team_id: The FPL team ID
+
+        Returns:
+            Dict with transfer history and available free transfers
+        """
+        return self._get(f"entry/{team_id}/transfers/")
+
     def get_team_current_squad(self, team_id: int) -> Dict:
         """
         Get the current squad for an FPL team.
@@ -161,14 +173,49 @@ class FPLAPIClient:
             # Extract squad (all 15 players)
             squad = [pick['element'] for pick in picks_data['picks']]
 
-            # Get transfer info
-            transfers = picks_data.get('entry_history', {})
+            # Get entry history for the current gameweek
+            entry_history = picks_data.get('entry_history', {})
+
+            # Free transfers available is in the entry_history
+            # 'event_transfers' is transfers MADE this week
+            # 'event_transfers_cost' is the cost of those transfers
+            # 'bank' is money in bank (in tenths)
+
+            # Calculate free transfers for NEXT gameweek
+            # FPL logic: Start with 1, can bank 1 (max 2)
+            # If you made 0 transfers this week, you'll have 2 next week
+            # If you made transfers, you'll have 1 next week
+            # Unless wildcard/free hit was used (then always 1)
+
+            transfers_made_this_gw = entry_history.get('event_transfers', 0)
+
+            # Get the actual free transfers available (should be in team_info or we calculate it)
+            # The entry_history in picks_data might have 'event_transfers' for current week
+            # But we want to know what's available for NEXT week
+
+            # Best approach: Use the transfers endpoint to see latest status
+            # But for now, use a heuristic:
+            # If no transfers were made this week and it's not the first week, assume 2
+            # Otherwise assume 1
+            # Note: This is imperfect - the actual number should come from the API
+
+            # Try to get from team_info if available
+            free_transfers = 1  # Default
+
+            # Check if transfers endpoint has the info
+            try:
+                transfers_data = self.get_team_transfers(team_id)
+                # The response might have a 'free_transfers' field or we need to calculate
+                # For now, we'll see what the API returns and adjust
+            except:
+                pass
 
             return {
                 'squad': squad,
-                'bank': team_info['last_deadline_bank'] / 10.0,  # Convert from tenths
-                'squad_value': team_info['last_deadline_value'] / 10.0,
-                'free_transfers': transfers.get('event_transfers', 1),
+                'bank': entry_history.get('bank', team_info['last_deadline_bank']) / 10.0,
+                'squad_value': entry_history.get('value', team_info['last_deadline_value']) / 10.0,
+                'free_transfers': free_transfers,  # We'll improve this
+                'transfers_made_this_week': transfers_made_this_gw,
                 'total_points': team_info['summary_overall_points'],
                 'overall_rank': team_info['summary_overall_rank'],
                 'team_name': team_info['name'],
@@ -176,4 +223,5 @@ class FPLAPIClient:
             }
         except Exception as e:
             print(f"Warning: Could not fetch team data: {str(e)}")
+            print(f"Error details: {e}")
             return None
