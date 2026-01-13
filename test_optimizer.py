@@ -80,10 +80,19 @@ def test_basic_optimizer():
         for player in top_players:
             pred = forecaster.predict_points(player, num_gameweeks=3, detailed=True)
             print(f"\n   {player.name} ({player.position}, £{player.price}m)")
-            print(f"     Total (3 GWs): {pred['total']:.1f} pts")
-            print(f"     Base PPG: {pred['base_ppg']:.1f}")
-            print(f"     Fixture Mult: {pred['fixture_mult']:.2f}")
-            print(f"     Expected Bonus: {pred['expected_bonus']:.1f}")
+
+            if isinstance(pred, dict):
+                print(f"     Total (3 GWs): {pred.get('total', 0):.1f} pts")
+
+                # Check if player is unavailable
+                if 'reason' in pred:
+                    print(f"     Status: {pred['reason']}")
+                else:
+                    print(f"     Base PPG: {pred.get('base_ppg', 0):.1f}")
+                    print(f"     Fixture Mult: {pred.get('fixture_mult', 0):.2f}")
+                    print(f"     Expected Bonus: {pred.get('expected_bonus', 0):.1f}")
+            else:
+                print(f"     Total (3 GWs): {pred:.1f} pts")
 
         print("\n   ✓ Predictions working correctly")
     except Exception as e:
