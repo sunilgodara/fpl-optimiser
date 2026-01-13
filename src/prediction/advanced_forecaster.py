@@ -6,6 +6,7 @@ import statistics
 from ..data.models import Player, Team, Fixture, GameweekData
 from .rotation_predictor import RotationPredictor
 from .xg_integrator import XGIntegrator
+from .bonus_predictor import BonusPointsPredictor
 
 
 class AdvancedForecaster:
@@ -39,7 +40,7 @@ class AdvancedForecaster:
         'FWD': {'defence': 0.05, 'attack': 0.95},
     }
 
-    def __init__(self, gameweek_data: GameweekData, api_client, use_rotation_model: bool = True, use_xg_model: bool = True, use_understat: bool = False):
+    def __init__(self, gameweek_data: GameweekData, api_client, use_rotation_model: bool = True, use_xg_model: bool = True, use_understat: bool = False, use_bonus_model: bool = True):
         self.data = gameweek_data
         self.api_client = api_client
         self.team_fixtures = self._organize_fixtures_by_team()
@@ -60,6 +61,13 @@ class AdvancedForecaster:
             self.xg_integrator = XGIntegrator(gameweek_data, api_client, use_understat=use_understat)
         else:
             self.xg_integrator = None
+
+        # Initialize bonus points predictor (Phase 2)
+        self.use_bonus_model = use_bonus_model
+        if use_bonus_model:
+            self.bonus_predictor = BonusPointsPredictor(gameweek_data, api_client)
+        else:
+            self.bonus_predictor = None
 
     def _organize_fixtures_by_team(self) -> Dict[int, List[Fixture]]:
         """Organize fixtures by team ID."""
@@ -367,8 +375,38 @@ class AdvancedForecaster:
             )
             xg_variance = xg_breakdown.get('variance', 0.0)
 
+        # Add bonus points prediction (Phase 2.1)
+        bonus_adjusted = xg_adjusted
+        expected_bonus = 0.0
+        if self.use_bonus_model and self.bonus_predictor:
+            # Get next fixture for this player's team
+            fixtures = self.team_fixtures.get(player.team_id, [])
+            next_fixtures = sorted(
+                [f for f in fixtures if f.event is not None and f.event >= self.data.current_gameweek],
+                key=lambda x: x.event
+            )[:num_gameweeks]
+
+            if next_fixtures:
+                # Estimate goals/assists from xG (simplified)
+                predicted_goals = xg_adjusted * 0.15 if player.position in ['FWD', 'MID'] else xg_adjusted * 0.05
+                predicted_assists = xg_adjusted * 0.10 if player.position == 'MID' else xg_adjusted * 0.05
+                clean_sheet_prob = 0.3 if player.position in ['GK', 'DEF'] else 0.0
+
+                # Predict bonus for first fixture (simplified)
+                _, bonus_points = self.bonus_predictor.get_expected_bonus_for_player(
+                    player,
+                    next_fixtures[0],
+                    predicted_goals=predicted_goals,
+                    predicted_assists=predicted_assists,
+                    clean_sheet_prob=clean_sheet_prob,
+                    minutes_expected=90 * minutes_reliability
+                )
+
+                expected_bonus = bonus_points * num_gameweeks
+                bonus_adjusted = xg_adjusted + expected_bonus
+
         # Scale to number of gameweeks
-        total_prediction = xg_adjusted * num_gameweeks
+        total_prediction = bonus_adjusted * num_gameweeks
 
         # Ensure minimum for players who play
         if minutes_reliability > 0.5:
@@ -384,6 +422,7 @@ class AdvancedForecaster:
                 'consistency': round(consistency, 2),
                 'rotation_risk': round(rotation_risk, 3),
                 'xg_variance': round(xg_variance, 2),
+                'expected_bonus': round(expected_bonus, 2),
             }
 
         return round(total_prediction, 2)
