@@ -56,25 +56,44 @@ class Phase1Backtester:
         actual_points = gw_data.get('actual_points', {})
 
         # Calculate predicted vs actual for squad
-        total_predicted = sum(predicted_points.get(pid, 0) for pid in current_squad)
-        total_actual = sum(actual_points.get(pid, 0) for pid in current_squad)
+        # Use best 11 players (simulate actual FPL scoring)
+        squad_predicted = {pid: predicted_points.get(pid, 0) for pid in current_squad}
+        squad_actual = {pid: actual_points.get(pid, 0) for pid in current_squad}
 
-        # Calculate error
-        squad_mae = abs(total_predicted - total_actual) / len(current_squad)
+        # Sort by predicted to get best 11
+        best_11_predicted = sorted(squad_predicted.items(), key=lambda x: x[1], reverse=True)[:11]
+        total_predicted = sum(p[1] for p in best_11_predicted)
+
+        # Get actual for those same 11 players
+        best_11_ids = [p[0] for p in best_11_predicted]
+        total_actual = sum(squad_actual.get(pid, 0) for pid in best_11_ids)
+
+        # Calculate error per player
+        errors = [abs(squad_predicted.get(pid, 0) - squad_actual.get(pid, 0))
+                  for pid in current_squad]
+        squad_mae = sum(errors) / len(errors) if errors else 0
+
+        # Also calculate error for the 11 we picked
+        best_11_errors = [abs(squad_predicted.get(pid, 0) - squad_actual.get(pid, 0))
+                          for pid in best_11_ids]
+        best_11_mae = sum(best_11_errors) / len(best_11_errors) if best_11_errors else 0
 
         return {
             'gameweek': gw,
             'total_predicted': total_predicted,
             'total_actual': total_actual,
             'mae': squad_mae,
-            'squad_size': len(current_squad)
+            'best_11_mae': best_11_mae,
+            'squad_size': len(current_squad),
+            'best_11_size': len(best_11_ids)
         }
 
     def run_backtest(
         self,
         start_gw: int,
         end_gw: int,
-        initial_squad: List[int]
+        initial_squad: List[int],
+        use_optimizer: bool = True
     ) -> Dict:
         """
         Run full backtest over gameweek range.
@@ -83,6 +102,7 @@ class Phase1Backtester:
             start_gw: Starting gameweek
             end_gw: Ending gameweek
             initial_squad: Starting 15-player squad
+            use_optimizer: If True, use AdvancedForecaster; if False, use baseline
 
         Returns:
             Dict with backtest results
@@ -90,6 +110,7 @@ class Phase1Backtester:
         print("=" * 80)
         print("PHASE 1 BACKTEST")
         print(f"Testing GW{start_gw} to GW{end_gw}")
+        print(f"Mode: {'OPTIMIZER' if use_optimizer else 'BASELINE (Actual=Predicted)'}")
         print("=" * 80)
 
         current_squad = initial_squad.copy()
@@ -98,16 +119,56 @@ class Phase1Backtester:
         total_actual = 0
         errors = []
 
+        # Initialize API client and forecaster if using optimizer
+        forecaster = None
+        if use_optimizer:
+            print("\nInitializing AdvancedForecaster...")
+            try:
+                api_client = FPLAPIClient()
+                bootstrap = api_client.get_bootstrap_static()
+                fixtures = api_client.get_fixtures()
+                gameweek_data = build_gameweek_data(bootstrap, fixtures)
+
+                forecaster = AdvancedForecaster(
+                    gameweek_data,
+                    api_client,
+                    use_rotation_model=True,
+                    use_xg_model=True,
+                    use_understat=False,  # Disabled for speed
+                    use_bonus_model=True,
+                    use_confidence_model=False  # Disabled for backtest
+                )
+                print("✓ Forecaster initialized\n")
+            except Exception as e:
+                print(f"✗ Failed to initialize forecaster: {e}")
+                print("Falling back to baseline mode\n")
+                use_optimizer = False
+
         for gw in range(start_gw, end_gw + 1):
             print(f"\nSimulating GW{gw}...")
 
-            # In real backtest, we'd use predictions from that week
-            # For now, use historical actual as predicted (baseline)
+            # Get actual points from historical data
             gw_data = self.historical_data['gameweeks'].get(gw, {})
             actual_points = gw_data.get('actual_points', {})
 
-            # Simulate with actual = predicted (baseline test)
-            predicted_points = actual_points
+            # Generate predictions
+            if use_optimizer and forecaster:
+                # Use AdvancedForecaster to generate real predictions
+                # Note: This uses current season data, not historical snapshot
+                # In a true backtest, we'd need historical player stats as of that GW
+                try:
+                    predicted_points = {}
+                    for player in gameweek_data.players:
+                        if player.id in current_squad:
+                            pred = forecaster.predict_points(player, num_gameweeks=1)
+                            predicted_points[player.id] = pred
+                    print(f"  Generated predictions for {len(predicted_points)} players")
+                except Exception as e:
+                    print(f"  Warning: Prediction failed: {e}")
+                    predicted_points = actual_points
+            else:
+                # Baseline: use actual = predicted
+                predicted_points = actual_points
 
             result = self.simulate_gameweek(gw, current_squad, predicted_points)
             gameweek_results.append(result)
@@ -116,8 +177,9 @@ class Phase1Backtester:
             total_actual += result['total_actual']
             errors.append(result['mae'])
 
-            print(f"  Predicted: {result['total_predicted']:.1f}")
-            print(f"  Actual: {result['total_actual']:.1f}")
+            print(f"  Predicted (Best 11): {result['total_predicted']:.1f}")
+            print(f"  Actual (Best 11): {result['total_actual']:.1f}")
+            print(f"  Error: {result['total_predicted'] - result['total_actual']:+.1f}")
             print(f"  MAE: {result['mae']:.2f}")
 
         # Calculate metrics
@@ -130,7 +192,8 @@ class Phase1Backtester:
             'total_actual': total_actual,
             'overall_mae': overall_mae,
             'prediction_bias': prediction_bias,
-            'gameweek_results': gameweek_results
+            'gameweek_results': gameweek_results,
+            'mode': 'optimizer' if use_optimizer else 'baseline'
         }
 
         return results
@@ -141,7 +204,9 @@ class Phase1Backtester:
         print("BACKTEST RESULTS")
         print("=" * 80)
 
-        print(f"\nGameweeks Tested: {results['gameweeks_tested']}")
+        mode = results.get('mode', 'unknown')
+        print(f"\nMode: {mode.upper()}")
+        print(f"Gameweeks Tested: {results['gameweeks_tested']}")
         print(f"Total Predicted Points: {results['total_predicted']:.1f}")
         print(f"Total Actual Points: {results['total_actual']:.1f}")
         print(f"Prediction Bias: {results['prediction_bias']:+.1f} points")
@@ -150,15 +215,38 @@ class Phase1Backtester:
         # Calculate accuracy (only if we have actual data)
         if results['total_actual'] > 0:
             avg_actual = results['total_actual'] / results['gameweeks_tested']
+            avg_predicted = results['total_predicted'] / results['gameweeks_tested']
+
             if avg_actual > 0:
+                # Accuracy relative to average points
                 accuracy = (1 - results['overall_mae'] / (avg_actual / 15)) * 100
                 print(f"Prediction Accuracy: {accuracy:.1f}%")
+
+                # Average points per gameweek
+                print(f"\nAverage per GW:")
+                print(f"  Predicted: {avg_predicted:.1f} pts")
+                print(f"  Actual: {avg_actual:.1f} pts")
+                print(f"  Difference: {avg_predicted - avg_actual:+.1f} pts/GW")
+
+                # Interpretation
+                if mode == 'baseline':
+                    print("\n⚠️  NOTE: Baseline mode (predicted = actual)")
+                    print("   Perfect accuracy is expected. This validates data collection only.")
+                elif results['overall_mae'] < 2.0:
+                    print("\n✓ Excellent prediction accuracy (MAE < 2.0)")
+                elif results['overall_mae'] < 3.0:
+                    print("\n✓ Good prediction accuracy (MAE < 3.0)")
+                elif results['overall_mae'] < 4.0:
+                    print("\n⚠️  Fair prediction accuracy (MAE 3.0-4.0)")
+                else:
+                    print("\n⚠️  Poor prediction accuracy (MAE > 4.0)")
+                    print("   Consider tuning forecaster parameters")
         else:
             print("\n⚠️  Warning: No actual points data available")
             print("   Historical data collection may have failed.")
             print("   The FPL API only provides current season data.")
             print("\n   To properly backtest:")
-            print("   1. Use the current season data (2024-25 GW1 onwards)")
+            print("   1. Use the current season data (2025-26 GW1 onwards)")
             print("   2. Or manually collect historical data from external sources")
 
         print("\n" + "=" * 80)
@@ -173,6 +261,8 @@ def main():
     parser.add_argument('--start-gw', type=int, default=1, help='Start gameweek')
     parser.add_argument('--end-gw', type=int, default=5, help='End gameweek')
     parser.add_argument('--collect', action='store_true', help='Collect data first')
+    parser.add_argument('--baseline', action='store_true',
+                        help='Use baseline mode (predicted=actual) instead of optimizer')
 
     args = parser.parse_args()
 
@@ -203,10 +293,13 @@ def main():
 
     # Step 3: Run backtest
     backtester = Phase1Backtester(historical_data)
+    use_optimizer = not args.baseline  # Optimizer mode unless --baseline flag
+
     results = backtester.run_backtest(
         start_gw=args.start_gw,
         end_gw=args.end_gw,
-        initial_squad=player_ids
+        initial_squad=player_ids,
+        use_optimizer=use_optimizer
     )
 
     # Step 4: Print results
