@@ -1,5 +1,9 @@
 """
 Chip strategy optimizer for Wildcard, Bench Boost, Triple Captain, and Free Hit.
+
+Supports 2025/26 GW20 reset rule:
+- H1 (GW1-19): First set of chips (use or lose)
+- H2 (GW20-38): Second set refreshes at GW20
 """
 from typing import Dict, List, Optional, Tuple
 from ..data.models import Player, GameweekData, Fixture
@@ -8,15 +12,63 @@ from .squad_optimizer import SquadOptimizer
 
 class ChipStrategyOptimizer:
     """
-    Optimizes usage of FPL chips:
-    - Wildcard (2 per season): Unlimited free transfers
-    - Bench Boost: Bench players score points
-    - Triple Captain: Captain gets 3x points instead of 2x
-    - Free Hit: Make unlimited transfers for 1 week, then revert
+    Optimizes usage of FPL chips with 2025/26 GW20 reset rule.
+
+    Chip availability:
+    - H1 (GW1-19): WC1, BB1, TC1, FH1
+    - H2 (GW20-38): WC2, BB2, TC2, FH2 (refresh at GW20)
+
+    Note: Chips unused in H1 are LOST at GW20!
     """
+
+    # Chip reset gameweek (2025/26 rule)
+    CHIP_RESET_GAMEWEEK = 20
 
     def __init__(self, gameweek_data: GameweekData):
         self.data = gameweek_data
+
+    def _get_season_half(self, gameweek: int) -> str:
+        """
+        Get which half of season a gameweek is in.
+
+        Args:
+            gameweek: Gameweek number
+
+        Returns:
+            'H1' for GW1-19, 'H2' for GW20-38
+        """
+        return 'H1' if gameweek < self.CHIP_RESET_GAMEWEEK else 'H2'
+
+    def _filter_horizon_for_half(
+        self,
+        start_gw: int,
+        horizon: int,
+        season_half: Optional[str] = None
+    ) -> Tuple[int, int]:
+        """
+        Filter horizon to stay within season half.
+
+        Args:
+            start_gw: Starting gameweek
+            horizon: Desired horizon
+            season_half: 'H1', 'H2', or None (auto-detect)
+
+        Returns:
+            (start_gw, effective_horizon) tuple
+        """
+        if season_half is None:
+            season_half = self._get_season_half(start_gw)
+
+        if season_half == 'H1':
+            # Cap horizon at GW19
+            max_gw = self.CHIP_RESET_GAMEWEEK - 1
+            effective_horizon = min(horizon, max_gw - start_gw + 1)
+        else:  # H2
+            # Can plan through GW38
+            max_gw = 38
+            effective_horizon = min(horizon, max_gw - start_gw + 1)
+
+        return start_gw, max(1, effective_horizon)
 
     def _count_fixtures_in_gameweek(self, team_id: int, gameweek: int) -> int:
         """Count number of fixtures a team has in a gameweek."""
@@ -452,16 +504,16 @@ class ChipStrategyOptimizer:
         horizon: int = 10
     ) -> Dict[str, Dict]:
         """
-        Get comprehensive chip strategy recommendation.
+        Get comprehensive chip strategy recommendation with 2025/26 GW20 reset support.
 
         Args:
             current_squad: Current squad player IDs
             expected_points_by_week: Expected points per player per gameweek
-            available_chips: List of chips still available (e.g., ['wildcard', 'bench_boost'])
+            available_chips: List of chips still available (e.g., ['wildcard1', 'wildcard2', 'bboost'])
             horizon: Weeks to plan ahead
 
         Returns:
-            Dict with recommendations for each chip type
+            Dict with recommendations for each chip type, including reset warnings
         """
         recommendations = {}
 
@@ -471,64 +523,179 @@ class ChipStrategyOptimizer:
         else:
             start_gw = self.data.current_gameweek
 
+        # Determine season half and adjust horizon
+        season_half = self._get_season_half(start_gw)
+        start_gw, effective_horizon = self._filter_horizon_for_half(
+            start_gw, horizon, season_half
+        )
+
+        # Add metadata about chip reset
+        recommendations['_metadata'] = {
+            'season_half': season_half,
+            'current_gw': start_gw,
+            'planning_horizon': effective_horizon,
+            'chip_reset_gw': self.CHIP_RESET_GAMEWEEK,
+        }
+
+        # H1 warning: chips will be lost if unused
+        if season_half == 'H1' and start_gw < self.CHIP_RESET_GAMEWEEK:
+            gws_until_reset = self.CHIP_RESET_GAMEWEEK - start_gw
+            h1_chips = [c for c in available_chips if c in ['wildcard1', 'bboost', '3xc', 'freehit']]
+
+            if h1_chips:
+                recommendations['_metadata']['h1_warning'] = {
+                    'message': f'⚠️  H1 chips will be LOST if unused by GW{self.CHIP_RESET_GAMEWEEK - 1}',
+                    'gws_remaining': gws_until_reset,
+                    'chips_at_risk': h1_chips,
+                    'recommendation': 'Plan to use H1 chips before GW20 reset!'
+                }
+
         # Aggregate expected points for multi-week evaluations
         total_expected_points = {}
         for player in self.data.get_available_players():
             total_ep = sum(
                 expected_points_by_week.get(gw, {}).get(player.id, 0)
-                for gw in range(start_gw, start_gw + horizon)
+                for gw in range(start_gw, start_gw + effective_horizon)
             )
             total_expected_points[player.id] = total_ep
 
-        # Evaluate each chip type
-        if 'wildcard' in available_chips or 'wildcard1' in available_chips or 'wildcard2' in available_chips:
-            wc_eval = self.evaluate_wildcard_opportunities(
-                current_squad, expected_points_by_week, horizon
-            )
-            best_wc_gw = max(wc_eval.items(), key=lambda x: x[1]['total_value'])
-            recommendations['wildcard'] = {
-                'evaluations': wc_eval,
-                'best_gameweek': best_wc_gw[0],
-                'best_value': best_wc_gw[1]['total_value'],
-                'recommended': best_wc_gw[1]['recommended']
-            }
+        # Evaluate each chip type (only for relevant half)
+        # Wildcard: Distinguish between WC1 (H1) and WC2 (H2)
+        wildcard_available = (
+            ('wildcard' in available_chips) or
+            (season_half == 'H1' and 'wildcard1' in available_chips) or
+            (season_half == 'H2' and 'wildcard2' in available_chips)
+        )
 
+        if wildcard_available:
+            wc_eval = self.evaluate_wildcard_opportunities(
+                current_squad, expected_points_by_week, effective_horizon
+            )
+            if wc_eval:
+                best_wc_gw = max(wc_eval.items(), key=lambda x: x[1]['total_value'])
+                wildcard_key = 'wildcard1' if season_half == 'H1' else 'wildcard2'
+                recommendations[wildcard_key] = {
+                    'evaluations': wc_eval,
+                    'best_gameweek': best_wc_gw[0],
+                    'best_value': best_wc_gw[1]['total_value'],
+                    'recommended': best_wc_gw[1]['recommended'],
+                    'season_half': season_half
+                }
+
+        # Bench Boost (respects season half)
         if 'bboost' in available_chips:
             bb_eval = self.evaluate_bench_boost(
-                current_squad, total_expected_points, horizon, start_gw
+                current_squad, total_expected_points, effective_horizon, start_gw
             )
-            best_bb_gw = max(bb_eval.items(), key=lambda x: x[1]['value'])
-            recommendations['bench_boost'] = {
-                'evaluations': bb_eval,
-                'best_gameweek': best_bb_gw[0],
-                'best_value': best_bb_gw[1]['value'],
-                'recommended': best_bb_gw[1]['recommended']
-            }
+            if bb_eval:
+                best_bb_gw = max(bb_eval.items(), key=lambda x: x[1]['value'])
+                recommendations['bench_boost'] = {
+                    'evaluations': bb_eval,
+                    'best_gameweek': best_bb_gw[0],
+                    'best_value': best_bb_gw[1]['value'],
+                    'recommended': best_bb_gw[1]['recommended'],
+                    'season_half': season_half
+                }
 
+        # Triple Captain (respects season half)
         if '3xc' in available_chips:
-            tc_eval = self.evaluate_triple_captain(total_expected_points, horizon, start_gw)
-            best_tc_gw = max(tc_eval.items(), key=lambda x: x[1]['value'])
-            recommendations['triple_captain'] = {
-                'evaluations': tc_eval,
-                'best_gameweek': best_tc_gw[0],
-                'best_captain': best_tc_gw[1]['captain_name'],
-                'best_value': best_tc_gw[1]['value'],
-                'recommended': best_tc_gw[1]['recommended']
-            }
+            tc_eval = self.evaluate_triple_captain(total_expected_points, effective_horizon, start_gw)
+            if tc_eval:
+                best_tc_gw = max(tc_eval.items(), key=lambda x: x[1]['value'])
+                recommendations['triple_captain'] = {
+                    'evaluations': tc_eval,
+                    'best_gameweek': best_tc_gw[0],
+                    'best_captain': best_tc_gw[1]['captain_name'],
+                    'best_value': best_tc_gw[1]['value'],
+                    'recommended': best_tc_gw[1]['recommended'],
+                    'season_half': season_half
+                }
 
+        # Free Hit (respects season half)
         if 'freehit' in available_chips:
             fh_eval = self.evaluate_free_hit(
-                current_squad, expected_points_by_week, horizon
+                current_squad, expected_points_by_week, effective_horizon
             )
-            best_fh_gw = max(fh_eval.items(), key=lambda x: x[1]['value'])
-            recommendations['free_hit'] = {
-                'evaluations': fh_eval,
-                'best_gameweek': best_fh_gw[0],
-                'best_value': best_fh_gw[1]['value'],
-                'recommended': best_fh_gw[1]['recommended']
-            }
+            if fh_eval:
+                best_fh_gw = max(fh_eval.items(), key=lambda x: x[1]['value'])
+                recommendations['free_hit'] = {
+                    'evaluations': fh_eval,
+                    'best_gameweek': best_fh_gw[0],
+                    'best_value': best_fh_gw[1]['value'],
+                    'recommended': best_fh_gw[1]['recommended'],
+                    'season_half': season_half
+                }
 
         # Resolve conflicts: only one chip per gameweek allowed
         resolved_recommendations = self.resolve_chip_conflicts(recommendations)
 
         return resolved_recommendations
+
+    def print_chip_strategy_summary(
+        self,
+        chip_recommendations: Dict[str, Dict],
+        verbose: bool = True
+    ):
+        """
+        Print human-readable summary of chip strategy with 2025/26 reset awareness.
+
+        Args:
+            chip_recommendations: Output from get_chip_strategy()
+            verbose: If True, show detailed recommendations
+        """
+        if not chip_recommendations:
+            print("No chip recommendations available.")
+            return
+
+        metadata = chip_recommendations.get('_metadata', {})
+        season_half = metadata.get('season_half', 'Unknown')
+        current_gw = metadata.get('current_gw', 0)
+        chip_reset_gw = metadata.get('chip_reset_gw', 20)
+
+        print(f"\n{'=' * 70}")
+        print(f"CHIP STRATEGY - Season Half: {season_half} (Current GW{current_gw})")
+        print(f"{'=' * 70}")
+
+        # Show H1 warning if applicable
+        h1_warning = metadata.get('h1_warning')
+        if h1_warning:
+            print(f"\n{h1_warning['message']}")
+            print(f"  • Gameweeks remaining in H1: {h1_warning['gws_remaining']}")
+            print(f"  • Chips at risk: {', '.join(h1_warning['chips_at_risk'])}")
+            print()
+
+        # Display chip recommendations
+        chip_order = ['wildcard1', 'wildcard2', 'bench_boost', 'triple_captain', 'free_hit']
+        for chip_name in chip_order:
+            if chip_name in chip_recommendations:
+                chip_data = chip_recommendations[chip_name]
+                best_gw = chip_data.get('best_gameweek')
+                best_value = chip_data.get('best_value', 0)
+                recommended = chip_data.get('recommended', False)
+                chip_half = chip_data.get('season_half', '?')
+
+                status = "✅ RECOMMENDED" if recommended else "⚠️  Optional"
+
+                print(f"\n{chip_name.upper().replace('_', ' ')} ({chip_half}):")
+                print(f"  Status: {status}")
+                print(f"  Best GW: GW{best_gw}")
+                print(f"  Expected Value: +{best_value:.1f} points")
+
+                if chip_name in ['wildcard1', 'wildcard2']:
+                    transfers_needed = chip_data.get('evaluations', {}).get(best_gw, {}).get('transfers_needed', 0)
+                    print(f"  Transfers Needed: {transfers_needed}")
+                elif chip_name == 'triple_captain':
+                    captain = chip_data.get('best_captain', 'Unknown')
+                    print(f"  Best Captain: {captain}")
+
+                if verbose and 'conflict_resolution' in chip_data:
+                    print(f"  Note: {chip_data['conflict_resolution']}")
+
+        # Show rejected chips if any
+        conflicts = chip_recommendations.get('_conflicts')
+        if conflicts and verbose:
+            print(f"\n⚠️  CONFLICTS:")
+            for rejected in conflicts.get('rejected_chips', []):
+                print(f"  • {rejected['chip_name']} couldn't be scheduled (value: {rejected['value']:.1f})")
+
+        print(f"\n{'=' * 70}\n")
