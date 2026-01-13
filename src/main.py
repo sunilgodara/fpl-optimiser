@@ -33,7 +33,7 @@ def run_basic_optimizer(config):
     print(f"\n[2/5] Predicting player points (next {config.prediction_horizon} GWs)...")
 
     if config.use_advanced_predictions:
-        forecaster = AdvancedForecaster(gameweek_data, api_client)
+        forecaster = AdvancedForecaster(gameweek_data, api_client, use_understat=False)
         print("  - Using advanced prediction engine with historical data")
     else:
         forecaster = PointForecaster(gameweek_data)
@@ -177,7 +177,10 @@ def run_long_term_optimizer(config, user_team_config, args):
 
     # Generate multi-week predictions
     print(f"\n[3/5] Generating predictions for next {config.chip_planning_horizon} gameweeks...")
-    forecaster = AdvancedForecaster(gameweek_data, api_client)
+    use_understat = args.use_understat if hasattr(args, 'use_understat') else False
+    if use_understat:
+        print("  ⚠️  Understat enabled - this will take 10-15 minutes per gameweek")
+    forecaster = AdvancedForecaster(gameweek_data, api_client, use_understat=use_understat)
 
     expected_points_by_week = {}
     for gw_offset in range(min(config.chip_planning_horizon, 38 - next_gw + 1)):
@@ -363,7 +366,10 @@ def run_advanced_optimizer(config, user_team_config, args):
 
     # Advanced predictions
     print(f"\n[{'3' if user_team_config.team_id else '2'}/6] Generating advanced predictions...")
-    forecaster = AdvancedForecaster(gameweek_data, api_client)
+    use_understat = args.use_understat if hasattr(args, 'use_understat') else False
+    if use_understat:
+        print("  ⚠️  Understat enabled - this will take 10-15 minutes per gameweek")
+    forecaster = AdvancedForecaster(gameweek_data, api_client, use_understat=use_understat)
 
     # Generate predictions for multiple gameweeks starting from next gameweek
     expected_points_by_week = {}
@@ -701,6 +707,11 @@ def main():
         '--long-term',
         action='store_true',
         help='Enable long-term season optimization (GW N→38 planning)'
+    )
+    parser.add_argument(
+        '--use-understat',
+        action='store_true',
+        help='Enable real xG data from Understat (slower but more accurate, adds ~10-15 min)'
     )
 
     args = parser.parse_args()

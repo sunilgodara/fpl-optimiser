@@ -39,7 +39,7 @@ class AdvancedForecaster:
         'FWD': {'defence': 0.05, 'attack': 0.95},
     }
 
-    def __init__(self, gameweek_data: GameweekData, api_client, use_rotation_model: bool = True, use_xg_model: bool = True):
+    def __init__(self, gameweek_data: GameweekData, api_client, use_rotation_model: bool = True, use_xg_model: bool = True, use_understat: bool = False):
         self.data = gameweek_data
         self.api_client = api_client
         self.team_fixtures = self._organize_fixtures_by_team()
@@ -53,9 +53,11 @@ class AdvancedForecaster:
             self.rotation_predictor = None
 
         # Initialize xG integrator (Issue #7)
+        # NOTE: use_understat disabled by default for speed (10-15 min per GW with Understat)
+        # Enable with use_understat=True if you want real xG data (slower but more accurate)
         self.use_xg_model = use_xg_model
         if use_xg_model:
-            self.xg_integrator = XGIntegrator(gameweek_data, api_client)
+            self.xg_integrator = XGIntegrator(gameweek_data, api_client, use_understat=use_understat)
         else:
             self.xg_integrator = None
 
