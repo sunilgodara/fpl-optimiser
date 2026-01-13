@@ -1,8 +1,8 @@
 # FPL Optimizer - Implementation Progress Report
 
-**Date:** January 12, 2026
+**Date:** January 13, 2026
 **Session:** Long-Term Optimization Improvements
-**Status:** Phase 1 Complete (2/3), Phase 2-4 Ready to Start
+**Status:** Phase 1 Complete (3/3), Phase 2 In Progress (1/3 complete)
 
 ---
 
@@ -145,37 +145,55 @@ variance = xg_integrator.calculate_performance_variance(player)
 
 ---
 
-## 🔵 REMAINING: Phase 2 - Point Maximization
+## 🔄 IN PROGRESS: Phase 2 - Point Maximization (1/3 complete)
 
-### Priority 4: Bonus Points System (BPS) Modeling
+### Priority 4: Bonus Points System (BPS) Modeling ✅
 
-**Status:** NOT STARTED
+**Status:** COMPLETE
 **Impact:** +40-60 points per season
 
-**What's Needed:**
+**What Was Built:**
 1. **BPS Prediction Model**
-   - Formula based on Opta stats:
-     - Goals: FWD=24, MID=18, DEF=12
+   - Implemented official Opta BPS formula:
+     - Goals: FWD=24, MID=18, DEF=12, GK=12
      - Assists: 9 BPS
-     - Penalties: 12 BPS (new 2025/26 rule)
+     - Penalties: 12 BPS (2025/26 rule - same for all positions)
      - Clean sheets: GK/DEF=12, MID=6
-     - Clearances/Blocks/Interceptions/Tackles (CBIT): 1-2 each
-     - New: Defenders get +2 FPL pts for 10+ CBIT
+     - CBIT stats: Clearances, Blocks, Interceptions, Tackles (1-2 BPS each)
+     - Saves (GK only): 2 BPS per 3 saves
+     - Big chances created: 3 BPS
+     - Penalties saved: 15 BPS
+     - Penalties missed: -3 BPS
 
-2. **Player Archetype Modeling**
-   - GK: Save-heavy vs sweeper-keeper
-   - DEF: Defensive rock vs attacking wing-back
-   - MID: Creator vs goal-scorer
-   - FWD: Poacher vs target man
+2. **Player Archetype Detection**
+   - Position-specific BPS patterns
+   - High/medium/low intensity defenders
+   - Save-heavy vs ball-playing keepers
+   - Creative vs goal-scoring midfielders/forwards
 
-3. **Fixture-Specific BPS**
-   - Easy fixture → more bonus opportunities
-   - Hard fixture → fewer bonus opportunities
+3. **Fixture-Specific BPS Probability**
+   - Calculates expected BPS based on predicted stats
+   - Winner probability based on BPS distribution
+   - Returns (BPS, bonus_points) with decimal precision
 
-**Files to Create:**
-- `src/prediction/bonus_predictor.py`
+4. **Integration with AdvancedForecaster**
+   - Added `use_bonus_model` parameter (default True)
+   - Bonus predictions included in total points
+   - Detailed breakdown includes expected_bonus
 
-**Estimated Time:** 3-4 hours
+**Integration:**
+```python
+# Automatic in prediction pipeline
+forecaster = AdvancedForecaster(gameweek_data, api_client, use_bonus_model=True)
+prediction = forecaster.predict_points(player, detailed=True)
+# Returns: {..., 'expected_bonus': 0.8, ...}
+```
+
+**Files Created:**
+- `src/prediction/bonus_predictor.py` (400+ lines)
+
+**Files Modified:**
+- `src/prediction/advanced_forecaster.py` (added BPS integration)
 
 ---
 

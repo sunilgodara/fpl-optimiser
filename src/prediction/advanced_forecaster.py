@@ -7,6 +7,7 @@ from ..data.models import Player, Team, Fixture, GameweekData
 from .rotation_predictor import RotationPredictor
 from .xg_integrator import XGIntegrator
 from .bonus_predictor import BonusPointsPredictor
+from .confidence_modeling import ConfidenceModeler, PredictionDistribution
 
 
 class AdvancedForecaster:
@@ -40,7 +41,7 @@ class AdvancedForecaster:
         'FWD': {'defence': 0.05, 'attack': 0.95},
     }
 
-    def __init__(self, gameweek_data: GameweekData, api_client, use_rotation_model: bool = True, use_xg_model: bool = True, use_understat: bool = False, use_bonus_model: bool = True):
+    def __init__(self, gameweek_data: GameweekData, api_client, use_rotation_model: bool = True, use_xg_model: bool = True, use_understat: bool = False, use_bonus_model: bool = True, use_confidence_model: bool = True):
         self.data = gameweek_data
         self.api_client = api_client
         self.team_fixtures = self._organize_fixtures_by_team()
@@ -62,12 +63,19 @@ class AdvancedForecaster:
         else:
             self.xg_integrator = None
 
-        # Initialize bonus points predictor (Phase 2)
+        # Initialize bonus points predictor (Phase 2.1)
         self.use_bonus_model = use_bonus_model
         if use_bonus_model:
             self.bonus_predictor = BonusPointsPredictor(gameweek_data, api_client)
         else:
             self.bonus_predictor = None
+
+        # Initialize confidence modeler (Phase 2.2)
+        self.use_confidence_model = use_confidence_model
+        if use_confidence_model:
+            self.confidence_modeler = ConfidenceModeler(gameweek_data)
+        else:
+            self.confidence_modeler = None
 
     def _organize_fixtures_by_team(self) -> Dict[int, List[Fixture]]:
         """Organize fixtures by team ID."""
@@ -464,3 +472,86 @@ class AdvancedForecaster:
 
         results.sort(key=lambda x: x[1], reverse=True)
         return results[:top_n]
+
+    def predict_with_confidence(
+        self,
+        player: Player,
+        num_gameweeks: int = 3,
+        risk_tolerance: str = 'balanced'
+    ) -> Tuple[float, PredictionDistribution]:
+        """
+        Predict points with confidence intervals and uncertainty modeling.
+
+        Args:
+            player: Player to predict for
+            num_gameweeks: Number of gameweeks to predict
+            risk_tolerance: 'conservative', 'balanced', or 'aggressive'
+
+        Returns:
+            (risk_adjusted_value, distribution) tuple
+        """
+        if not self.use_confidence_model or not self.confidence_modeler:
+            # Fallback to regular prediction
+            mean_pred = self.predict_points(player, num_gameweeks)
+            return mean_pred, None
+
+        # Get detailed prediction for components
+        detailed = self.predict_points(player, num_gameweeks, detailed=True)
+        mean_prediction = detailed['total']
+
+        # Get player history for variance calculation
+        history = self._get_player_history(player)
+
+        # Get rotation risk
+        rotation_risk = detailed.get('rotation_risk', 0.0)
+
+        # Get fixture difficulty
+        fixture_mult = detailed.get('fixture_mult', 1.0)
+
+        # Generate prediction distribution
+        distribution = self.confidence_modeler.predict_with_confidence(
+            player,
+            mean_prediction=mean_prediction,
+            gameweeks_ahead=num_gameweeks,
+            rotation_risk=rotation_risk,
+            fixture_difficulty=fixture_mult,
+            history=history
+        )
+
+        # Get risk-adjusted value
+        risk_adjusted = distribution.get_risk_adjusted_value(risk_tolerance)
+
+        return risk_adjusted, distribution
+
+    def get_predictions_with_confidence(
+        self,
+        num_gameweeks: int = 3,
+        risk_tolerance: str = 'balanced'
+    ) -> Dict[int, Tuple[float, PredictionDistribution]]:
+        """
+        Get predictions with confidence for all available players.
+
+        Args:
+            num_gameweeks: Number of gameweeks to predict
+            risk_tolerance: Risk tolerance setting
+
+        Returns:
+            Dict mapping player_id to (risk_adjusted_value, distribution)
+        """
+        predictions = {}
+        available_players = self.data.get_available_players()
+
+        print(f"  Generating predictions with confidence intervals for {len(available_players)} players...")
+
+        for i, player in enumerate(available_players):
+            predictions[player.id] = self.predict_with_confidence(
+                player,
+                num_gameweeks,
+                risk_tolerance
+            )
+
+            # Progress indicator
+            if (i + 1) % 100 == 0:
+                print(f"    Processed {i + 1}/{len(available_players)} players...")
+
+        return predictions
