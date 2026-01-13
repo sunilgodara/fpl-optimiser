@@ -40,9 +40,7 @@ def test_basic_optimizer():
     # Step 2: Fetch current gameweek data
     print("\n2. Fetching current gameweek data...")
     try:
-        bootstrap = api_client.get_bootstrap_static()
-        fixtures = api_client.get_fixtures()
-        gameweek_data = build_gameweek_data(bootstrap, fixtures)
+        gameweek_data = build_gameweek_data(api_client)
 
         print(f"   ✓ Current GW: {gameweek_data.current_gameweek}")
         print(f"   ✓ Players: {len(gameweek_data.players)}")

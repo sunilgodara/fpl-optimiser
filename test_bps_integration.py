@@ -25,10 +25,7 @@ def test_bps_integration():
 
     # Fetch current gameweek data
     print("2. Fetching gameweek data...")
-    bootstrap = api_client.get_bootstrap_static()
-    fixtures = api_client.get_fixtures()
-
-    gameweek_data = build_gameweek_data(bootstrap, fixtures)
+    gameweek_data = build_gameweek_data(api_client)
     print(f"   Current GW: {gameweek_data.current_gameweek}")
     print(f"   Players: {len(gameweek_data.players)}")
 

@@ -125,9 +125,7 @@ class Phase1Backtester:
             print("\nInitializing AdvancedForecaster...")
             try:
                 api_client = FPLAPIClient()
-                bootstrap = api_client.get_bootstrap_static()
-                fixtures = api_client.get_fixtures()
-                gameweek_data = build_gameweek_data(bootstrap, fixtures)
+                gameweek_data = build_gameweek_data(api_client)
 
                 forecaster = AdvancedForecaster(
                     gameweek_data,
