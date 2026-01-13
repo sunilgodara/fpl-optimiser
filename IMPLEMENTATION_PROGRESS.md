@@ -2,7 +2,7 @@
 
 **Date:** January 13, 2026
 **Session:** Long-Term Optimization Improvements
-**Status:** Phase 1 Complete (3/3), Phase 2 In Progress (1/3 complete)
+**Status:** Phase 1 Complete (3/3), Phase 2 Complete (3/3)
 
 ---
 
@@ -145,7 +145,7 @@ variance = xg_integrator.calculate_performance_variance(player)
 
 ---
 
-## 🔄 IN PROGRESS: Phase 2 - Point Maximization (1/3 complete)
+## ✅ COMPLETED: Phase 2 - Point Maximization
 
 ### Priority 4: Bonus Points System (BPS) Modeling ✅
 
@@ -197,74 +197,127 @@ prediction = forecaster.predict_points(player, detailed=True)
 
 ---
 
-### Priority 5: Prediction Confidence & Uncertainty
+### Priority 5: Prediction Confidence & Uncertainty ✅
 
-**Status:** NOT STARTED
+**Status:** COMPLETE
 **Impact:** Better long-term planning, risk-aware optimization
 
-**What's Needed:**
+**What Was Built:**
 1. **Bayesian Prediction with Confidence Intervals**
-   - Mean prediction: Expected value
-   - Std dev: Uncertainty increases over time
-   - GW22: ±1 point, GW25: ±2 points, GW38: ±5 points
+   - PredictionDistribution dataclass with mean, std_dev, percentiles
+   - Uncertainty increases exponentially with time horizon
+   - GW+1: ±1-2 pts, GW+5: ±3-4 pts, GW+10: ±6-8 pts
 
-2. **Uncertainty Sources:**
-   - Time horizon (weeks ahead)
-   - Player form variance
-   - Injury/rotation risk
-   - Fixture volatility
+2. **Multi-Source Uncertainty Modeling:**
+   - Time horizon (exponential growth: 15% per GW)
+   - Position-specific base uncertainty (GK: 0.5, DEF: 0.8, MID: 1.2, FWD: 1.5)
+   - Player form variance (from historical consistency)
+   - Minutes/rotation risk (15% uncertainty factor)
+   - Fixture volatility (higher for difficult fixtures)
 
 3. **Risk-Aware Optimization:**
    ```python
    # Conservative (protect rank)
-   objective = mean_EP - 0.5 * std_dev
+   value = mean - 0.5 * std_dev
 
    # Balanced
-   objective = mean_EP
+   value = mean
 
    # Aggressive (climb ranks)
-   objective = mean_EP + 0.3 * std_dev
+   value = mean + 0.3 * std_dev
    ```
 
-**Files to Create:**
-- `src/prediction/confidence_modeling.py`
+4. **Transfer Decision Confidence:**
+   - Confidence scoring for transfer decisions
+   - Accounts for combined uncertainty of both players
+   - Higher confidence when value gap is large relative to uncertainty
 
-**Estimated Time:** 4-5 hours
+**Integration:**
+```python
+forecaster = AdvancedForecaster(gameweek_data, api_client, use_confidence_model=True)
+risk_adjusted, distribution = forecaster.predict_with_confidence(
+    player,
+    num_gameweeks=5,
+    risk_tolerance='balanced'
+)
+# Returns: (4.2, PredictionDistribution(mean=4.5, std_dev=1.2, ...))
+```
+
+**Files Created:**
+- `src/prediction/confidence_modeling.py` (400+ lines)
+
+**Files Modified:**
+- `src/prediction/advanced_forecaster.py` (added confidence integration)
 
 ---
 
-### Priority 6: Enhanced Transfer Valuation
+### Priority 6: Enhanced Transfer Valuation ✅
 
-**Status:** NOT STARTED
+**Status:** COMPLETE
 **Impact:** +10-20 points per season (avoiding bad hits)
 
-**What's Needed:**
+**What Was Built:**
 1. **Comprehensive Transfer Value:**
    ```python
    Total Value =
-     Σ(EP_gain over 5 GWs) +
+     Σ(EP_gain over horizon) +
      (price_change_value) +
      (squad_flexibility_value) +
-     (chip_synergy_value) -
-     (transfer_cost if hit)
+     (chip_synergy_value) +
+     (transfer_cost)  # -4 per hit
    ```
 
-2. **Fixture Swing Duration:**
-   - How many weeks does the advantage last?
-   - Player A: +3 pts for 1 GW vs Player B: +2 pts for 5 GWs
+2. **Fixture Swing Duration Analysis:**
+   - Calculates consecutive GWs with favorable fixtures
+   - Example: Player A has 5 GWs of easy fixtures vs Player B has 2 GWs
+   - Helps identify long-term vs short-term value
 
-3. **Price Change Value:**
-   - New player rising £0.2m = +£0.1m locked value
-   - Old player dropping £0.1m = preserve value
+3. **Price Change Modeling:**
+   - Probability-based price rise/drop estimation
+   - Factors: ownership trends, form, PPG
+   - Expected value: rise probability × 0.1 × horizon × 5 points per £0.1m
+   - Incoming player rises → locked value gain
+   - Outgoing player drops avoided → value preserved
 
-4. **Squad Flexibility:**
-   - Does this transfer enable better future moves?
-   - "Bridge players": Good for 3-5 GWs while building towards template
+4. **Squad Flexibility Scoring:**
+   - Positional balance improvement (ideal: 2-5-5-3)
+   - Premium flexible positions (MID, FWD) bonus
+   - Mid-priced enablers (£5-7.5m) bonus
+   - Typical value: 0-3 points
 
-**Files to Create:**
-- `src/optimization/transfer_evaluator.py`
+5. **Chip Synergy Detection:**
+   - Wildcard: Negative value (transfer wasted before WC)
+   - Bench Boost: Bonus for good bench players (£4-6m, 4+ pts)
+   - Triple Captain: Bonus for premium captains (£11m+, 15+ pts)
+   - Free Hit: Negative value (temporary team)
 
-**Estimated Time:** 3-4 hours
+6. **Bridge Player Detection:**
+   - Mid-priced (£5-8m) players with good short-term fixtures
+   - Enable gradual moves towards template
+   - Don't lock excessive value
+
+7. **Transfer Decision Metrics:**
+   - `is_worth_hit()`: Total value > 0
+   - `payback_gameweeks()`: How many GWs to break even on hit
+   - Confidence scoring
+
+**Integration:**
+```python
+evaluator = TransferEvaluator(gameweek_data)
+transfer_value = evaluator.evaluate_transfer(
+    player_in, player_out,
+    in_predictions, out_predictions,
+    current_squad, fixtures_in, fixtures_out,
+    transfer_cost=-4, chip_plan=chip_plan
+)
+# Returns: TransferValue(points_gain=12.5, price_change_value=2.0, ..., total_value=10.5)
+```
+
+**Files Created:**
+- `src/optimization/transfer_evaluator.py` (500+ lines)
+
+**Files Modified:**
+- None (standalone module, ready for LongTermOptimizer integration)
 
 ---
 
