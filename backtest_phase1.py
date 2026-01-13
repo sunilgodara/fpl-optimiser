@@ -147,11 +147,19 @@ class Phase1Backtester:
         print(f"Prediction Bias: {results['prediction_bias']:+.1f} points")
         print(f"Mean Absolute Error: {results['overall_mae']:.2f} points per player per GW")
 
-        # Calculate accuracy
-        avg_actual = results['total_actual'] / results['gameweeks_tested']
-        accuracy = (1 - results['overall_mae'] / (avg_actual / 15)) * 100
-
-        print(f"Prediction Accuracy: {accuracy:.1f}%")
+        # Calculate accuracy (only if we have actual data)
+        if results['total_actual'] > 0:
+            avg_actual = results['total_actual'] / results['gameweeks_tested']
+            if avg_actual > 0:
+                accuracy = (1 - results['overall_mae'] / (avg_actual / 15)) * 100
+                print(f"Prediction Accuracy: {accuracy:.1f}%")
+        else:
+            print("\n⚠️  Warning: No actual points data available")
+            print("   Historical data collection may have failed.")
+            print("   The FPL API only provides current season data.")
+            print("\n   To properly backtest:")
+            print("   1. Use the current season data (2024-25 GW1 onwards)")
+            print("   2. Or manually collect historical data from external sources")
 
         print("\n" + "=" * 80)
 
