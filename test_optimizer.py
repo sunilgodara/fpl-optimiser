@@ -139,7 +139,7 @@ def test_basic_optimizer():
         if optimal_squad:
             print(f"\n   ✓ Optimal squad found:")
             print(f"     Total Expected Points: {optimal_squad['total_expected_points']:.1f}")
-            print(f"     Squad Value: £{optimal_squad['squad_value']:.1f}m")
+            print(f"     Total Cost: £{optimal_squad['total_cost']:.1f}m")
             print(f"     Squad Size: {len(optimal_squad['squad'])} players")
         else:
             print("   ✗ Failed to find optimal squad")
