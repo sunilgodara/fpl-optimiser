@@ -416,6 +416,10 @@ class ChipStrategyOptimizer:
         gw_to_chips = {}
 
         for chip_name, chip_data in chip_recommendations.items():
+            # Skip metadata keys (they start with '_')
+            if chip_name.startswith('_'):
+                continue
+
             best_gw = chip_data['best_gameweek']
             best_value = chip_data['best_value']
 
@@ -433,9 +437,18 @@ class ChipStrategyOptimizer:
         used_gameweeks = set()
         rejected_chips = []  # Chips that lost conflict resolution
 
+        # Preserve metadata keys from input
+        for key, value in chip_recommendations.items():
+            if key.startswith('_'):
+                resolved_recommendations[key] = value
+
         # Sort chips by value (highest first) to prioritize best chips
         all_chips = []
         for chip_name, chip_data in chip_recommendations.items():
+            # Skip metadata keys (they start with '_')
+            if chip_name.startswith('_'):
+                continue
+
             all_chips.append({
                 'chip_name': chip_name,
                 'best_gw': chip_data['best_gameweek'],
@@ -455,9 +468,11 @@ class ChipStrategyOptimizer:
                 alternative_found = False
 
                 # Sort gameweeks by value
+                # Wildcard uses 'total_value', other chips use 'value'
+                value_key = 'total_value' if 'wildcard' in chip_name else 'value'
                 sorted_gws = sorted(
                     evaluations.items(),
-                    key=lambda x: x[1].get('value' if chip_name != 'wildcard' else 'total_value', 0),
+                    key=lambda x: x[1].get(value_key, 0),
                     reverse=True
                 )
 
@@ -467,7 +482,7 @@ class ChipStrategyOptimizer:
                         resolved_recommendations[chip_name] = {
                             **chip['data'],
                             'best_gameweek': alt_gw,
-                            'best_value': alt_eval.get('value' if chip_name != 'wildcard' else 'total_value', 0),
+                            'best_value': alt_eval.get(value_key, 0),
                             'conflict_resolution': f"Moved from GW{best_gw} (conflict with higher-value chip)",
                             'original_gameweek': best_gw
                         }
