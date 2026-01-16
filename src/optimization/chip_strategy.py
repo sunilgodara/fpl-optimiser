@@ -169,7 +169,8 @@ class ChipStrategyOptimizer:
             optimizer = SquadOptimizer(self.data)
             optimal = optimizer.optimize_squad(horizon_points, verbose=False)
 
-            if optimal:
+            # Check if optimization succeeded and returned valid results
+            if optimal and optimal.get('total_expected_points') is not None:
                 current_squad_ep = sum(horizon_points.get(pid, 0) for pid in current_squad)
                 potential_gain = optimal['total_expected_points'] - current_squad_ep * 0.85
 
@@ -375,7 +376,8 @@ class ChipStrategyOptimizer:
             optimizer = SquadOptimizer(self.data)
             optimal = optimizer.optimize_squad(gw_points, verbose=False)
 
-            if optimal:
+            # Check if optimization succeeded and returned valid results
+            if optimal and optimal.get('total_expected_points') is not None:
                 # Compare optimal vs current squad
                 current_squad_ep = sum(gw_points.get(pid, 0) for pid in current_squad) * 0.73  # Best 11 of 15
                 optimal_ep = optimal['total_expected_points'] * 0.73
