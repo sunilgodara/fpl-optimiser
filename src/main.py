@@ -204,9 +204,13 @@ def run_long_term_optimizer(config, user_team_config, args):
         chips_available=user_team_config.chips_available
     )
 
+    # Use the actual number of gameweeks we have predictions for
+    # (don't plan beyond what we've predicted)
+    actual_horizon = len(expected_points_by_week)
+
     season_plan = long_term_opt.optimize_season(
         expected_points_by_week=expected_points_by_week,
-        horizon=min(10, 38 - next_gw + 1),  # Plan next 10 GWs in detail
+        horizon=actual_horizon,  # Plan based on available predictions
         strategy='cumulative_points'
     )
 

@@ -260,7 +260,10 @@ class LongTermOptimizer:
         best_path: List[TransferDecision] = []
         state = current_state
 
-        for gw in range(current_gw, current_gw + horizon):
+        # Start from next unplayed gameweek (current_gw is already finished)
+        next_gw = current_gw + 1
+
+        for gw in range(next_gw, next_gw + horizon):
             # Check if chip is scheduled for this GW
             chip_this_gw = None
             for chip_name, chip_gw in chip_schedule.items():
@@ -273,7 +276,7 @@ class LongTermOptimizer:
                 state,
                 expected_points_by_week.get(gw, {}),
                 chip_this_gw,
-                future_gws=list(range(gw + 1, current_gw + horizon))
+                future_gws=list(range(gw + 1, next_gw + horizon))
             )
 
             best_path.append(decision)

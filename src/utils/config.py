@@ -27,7 +27,7 @@ class OptimizerConfig:
 
     # Chip strategy
     plan_chips: bool = True
-    chip_planning_horizon: int = 5  # Gameweeks to look ahead for chip timing (reduced for speed)
+    chip_planning_horizon: int = 10  # Gameweeks to look ahead for chip timing (long-term planning)
     wildcard_threshold: float = 30.0  # Min value to activate wildcard
     bench_boost_threshold: float = 15.0  # Min bench points to use BB
     triple_captain_threshold: float = 20.0  # Min value for TC
@@ -88,7 +88,7 @@ AGGRESSIVE_CONFIG = OptimizerConfig(
     differential_weight=0.25,
     wildcard_threshold=20.0,
     plan_chips=True,  # Enable chip planning
-    chip_planning_horizon=5,  # Reduced for speed
+    chip_planning_horizon=10,  # Long-term planning
 )
 
 
