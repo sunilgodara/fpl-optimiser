@@ -389,9 +389,7 @@ class LongTermOptimizer:
 
             # Debug: Show top 10 players by aggregated EP
             if aggregated_ep:
-                from src.data.fpl_data_fetcher import FPLDataFetcher
-                data_fetcher = FPLDataFetcher()
-                player_names = {p.id: p.name for p in data_fetcher.get_all_players()}
+                player_names = {p.id: p.name for p in self.data.players}
 
                 top_players = sorted(aggregated_ep.items(), key=lambda x: x[1], reverse=True)[:10]
                 print(f"\n   Top 10 players by 5-week aggregated EP:")
@@ -435,9 +433,7 @@ class LongTermOptimizer:
 
         # Debug: Show selected squad
         if optimal.get('squad'):
-            from src.data.fpl_data_fetcher import FPLDataFetcher
-            data_fetcher = FPLDataFetcher()
-            all_players = {p.id: p for p in data_fetcher.get_all_players()}
+            all_players = {p.id: p for p in self.data.players}
 
             selected_with_ep = [(pid, optimize_ep.get(pid, 0)) for pid in optimal['squad']]
             selected_with_ep.sort(key=lambda x: x[1], reverse=True)
