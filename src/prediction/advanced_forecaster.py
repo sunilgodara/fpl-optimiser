@@ -139,29 +139,34 @@ class AdvancedForecaster:
         """
         Calculate consistency score (0-1).
         Penalizes players who have high variance in points.
+
+        NOTE: Elite players often have high variance (big hauls + blanks).
+        This should not penalize them too harshly.
         """
         history = self._get_player_history(player)
         if not history or 'history' not in history:
-            return 0.5
+            return 0.7  # Changed from 0.5 - be more generous
 
         recent_games = history['history'][-8:]  # Last 8 games
         if len(recent_games) < 3:
-            return 0.5
+            return 0.7
 
         points = [game['total_points'] for game in recent_games]
         if not points:
-            return 0.5
+            return 0.7
 
         mean_points = statistics.mean(points)
         if mean_points == 0:
-            return 0.3
+            return 0.5  # Changed from 0.3
 
         # Calculate coefficient of variation (lower = more consistent)
         stdev = statistics.stdev(points) if len(points) > 1 else 0
         cv = stdev / mean_points if mean_points > 0 else 1.0
 
         # Convert to 0-1 score (lower CV = higher consistency)
-        consistency = max(0, 1 - (cv / 2))  # Normalize assuming CV rarely > 2
+        # SOFTENED: Changed from cv/2 to cv/3 (less harsh penalty)
+        # Elite players have high variance but that's actually GOOD (ceiling matters)
+        consistency = max(0.3, 1 - (cv / 3))  # Min 0.3 instead of 0.0
         return min(consistency, 1.0)
 
     def calculate_minutes_reliability(self, player: Player) -> float:
@@ -173,15 +178,21 @@ class AdvancedForecaster:
         if not history or 'history' not in history:
             # Fallback to season minutes
             if player.minutes == 0:
-                return 0.1
+                return 0.5  # Changed from 0.1 - assume average reliability if no data
             # Estimate games played
             current_gw = self.data.current_gameweek
-            avg_minutes = player.minutes / max(current_gw - 1, 1)
-            return min(avg_minutes / 90, 1.0)
+            games_played = max(current_gw - 1, 1)
+            avg_minutes = player.minutes / games_played
+            reliability = min(avg_minutes / 90, 1.0)
+            # Premium players (high price) should get benefit of doubt
+            if player.price >= 10.0 and reliability < 0.7:
+                reliability = max(reliability, 0.8)  # Assume they start most games
+            return reliability
 
         recent_games = history['history'][-5:]
         if not recent_games:
-            return 0.1
+            # No recent games but history exists - assume average
+            return 0.8 if player.price >= 10.0 else 0.5
 
         # Calculate average minutes played
         avg_minutes = sum(g['minutes'] for g in recent_games) / len(recent_games)

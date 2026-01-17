@@ -180,7 +180,17 @@ def run_long_term_optimizer(config, user_team_config, args):
     use_understat = args.use_understat if hasattr(args, 'use_understat') else False
     if use_understat:
         print("  ⚠️  Understat enabled - this will take 10-15 minutes per gameweek")
-    forecaster = AdvancedForecaster(gameweek_data, api_client, use_understat=use_understat)
+
+    # CRITICAL: Disable rotation model - it's broken (gives 58.8% rotation risk for Haaland!)
+    # Also disable xG model for speed (can enable later once rotation is fixed)
+    print("  ⚠️  Rotation model disabled (broken - assigns high rotation risk to nailed players)")
+    forecaster = AdvancedForecaster(
+        gameweek_data,
+        api_client,
+        use_understat=use_understat,
+        use_rotation_model=False,  # DISABLED - broken
+        use_xg_model=False  # DISABLED for speed
+    )
 
     expected_points_by_week = {}
     for gw_offset in range(min(config.chip_planning_horizon, 38 - next_gw + 1)):
