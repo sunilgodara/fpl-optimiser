@@ -297,7 +297,8 @@ class LongTermOptimizer:
                 state,
                 expected_points_by_week.get(gw, {}),
                 chip_this_gw,
-                future_gws=list(range(gw + 1, next_gw + horizon))
+                future_gws=list(range(gw + 1, next_gw + horizon)),
+                expected_points_by_week=expected_points_by_week  # Pass full predictions for Wildcard
             )
 
             best_path.append(decision)
@@ -318,7 +319,8 @@ class LongTermOptimizer:
         state: SquadState,
         ep_this_gw: Dict[int, float],
         chip_this_gw: Optional[str],
-        future_gws: List[int]
+        future_gws: List[int],
+        expected_points_by_week: Optional[Dict[int, Dict[int, float]]] = None
     ) -> TransferDecision:
         """
         Optimizes transfers for a single GW considering future context.
@@ -331,15 +333,16 @@ class LongTermOptimizer:
             ep_this_gw: Expected points for this GW
             chip_this_gw: Chip to use this GW (or None)
             future_gws: Upcoming GWs to consider
+            expected_points_by_week: Full predictions by week (for Wildcard multi-week optimization)
 
         Returns:
             TransferDecision for this GW
         """
         gw = state.gameweek
 
-        # Handle Wildcard: Unlimited transfers
+        # Handle Wildcard: Unlimited transfers (optimize for 5-week horizon)
         if chip_this_gw == 'wildcard':
-            return self._handle_wildcard_gw(state, ep_this_gw)
+            return self._handle_wildcard_gw(state, ep_this_gw, expected_points_by_week, gw)
 
         # Handle Free Hit: Temporary squad for 1 GW
         if chip_this_gw == 'freehit':
@@ -351,11 +354,40 @@ class LongTermOptimizer:
     def _handle_wildcard_gw(
         self,
         state: SquadState,
-        ep_this_gw: Dict[int, float]
+        ep_this_gw: Dict[int, float],
+        expected_points_by_week: Optional[Dict[int, Dict[int, float]]] = None,
+        current_gw: int = None
     ) -> TransferDecision:
-        """Build optimal 15-man squad from scratch using Wildcard."""
-        # Use squad optimizer to build best squad
-        optimal = self.squad_optimizer.optimize_squad(ep_this_gw, verbose=False)
+        """
+        Build optimal 15-man squad from scratch using Wildcard.
+
+        CRITICAL: Wildcard should optimize for medium-term (5 GWs), not just next GW.
+        Otherwise we only make 2 transfers instead of rebuilding full squad.
+        """
+        # Aggregate predictions over next 5 gameweeks for medium-term optimization
+        WILDCARD_HORIZON = 5
+        aggregated_ep = {}
+
+        if expected_points_by_week and current_gw:
+            print(f"\n🔍 Wildcard Optimization:")
+            print(f"   Aggregating predictions over GW{current_gw} to GW{current_gw + WILDCARD_HORIZON - 1}")
+
+            # Sum expected points for each player over the 5-week window
+            for gw in range(current_gw, current_gw + WILDCARD_HORIZON):
+                if gw in expected_points_by_week:
+                    for player_id, ep in expected_points_by_week[gw].items():
+                        aggregated_ep[player_id] = aggregated_ep.get(player_id, 0) + ep
+
+            print(f"   Total players with predictions: {len(aggregated_ep)}")
+
+            # Use aggregated predictions for optimization
+            optimize_ep = aggregated_ep if aggregated_ep else ep_this_gw
+        else:
+            # Fallback to single GW if multi-week data not available
+            optimize_ep = ep_this_gw
+
+        # Use squad optimizer to build best squad for 5-week horizon
+        optimal = self.squad_optimizer.optimize_squad(optimize_ep, verbose=False)
 
         if not optimal:
             # Fallback: Keep current squad
@@ -377,13 +409,23 @@ class LongTermOptimizer:
         transfers_out = list(current_set - new_set)
         transfers_in = list(new_set - current_set)
 
+        print(f"   Transfers: {len(transfers_in)} in, {len(transfers_out)} out")
+        print(f"   5-week total EP: {optimal['total_expected_points']:.1f}")
+
+        # Calculate THIS gameweek's expected points (for display)
+        this_gw_ep = sum(ep_this_gw.get(pid, 0) for pid in optimal['squad'])
+        this_gw_best11 = sorted([ep_this_gw.get(pid, 0) for pid in optimal['squad']], reverse=True)[:11]
+        this_gw_points = sum(this_gw_best11)
+
+        print(f"   This GW (GW{current_gw}) EP: {this_gw_points:.1f}")
+
         return TransferDecision(
             gameweek=state.gameweek,
             transfers_out=transfers_out,
             transfers_in=transfers_in,
             hits_taken=0,  # Wildcard = no hits
             chip_used='wildcard',
-            expected_points=optimal['total_expected_points'],
+            expected_points=this_gw_points,  # This GW's expected points for display
             squad_after=optimal['squad'],
             bank_after=optimal.get('remaining_budget', 0),
             free_transfers_after=1  # Reset to 1 FT after Wildcard
