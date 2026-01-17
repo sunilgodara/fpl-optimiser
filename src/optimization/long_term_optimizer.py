@@ -364,6 +364,13 @@ class LongTermOptimizer:
         CRITICAL: Wildcard should optimize for medium-term (5 GWs), not just next GW.
         Otherwise we only make 2 transfers instead of rebuilding full squad.
         """
+        print(f"\n🔍 _handle_wildcard_gw DEBUG:")
+        print(f"   current_gw: {current_gw}")
+        print(f"   expected_points_by_week is None: {expected_points_by_week is None}")
+        if expected_points_by_week:
+            print(f"   expected_points_by_week keys: {sorted(list(expected_points_by_week.keys()))}")
+        print(f"   ep_this_gw players: {len(ep_this_gw)}")
+
         # Aggregate predictions over next 5 gameweeks for medium-term optimization
         WILDCARD_HORIZON = 5
         aggregated_ep = {}
