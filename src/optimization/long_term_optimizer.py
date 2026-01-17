@@ -174,8 +174,19 @@ class LongTermOptimizer:
         # Extract best GW for each chip (already conflict-resolved)
         chip_schedule = {}
         for chip_name, chip_data in chip_evals.items():
-            if chip_name == '_conflicts':
+            if chip_name == '_conflicts' or chip_name.startswith('_'):
                 continue
+
+            # Additional check for Wildcard: Don't use if we have enough free transfers
+            if 'wildcard' in chip_name:
+                transfers_needed = chip_data.get('evaluations', {}).get(
+                    chip_data['best_gameweek'], {}
+                ).get('transfers_needed', 99)
+
+                if transfers_needed <= self.free_transfers:
+                    # Don't waste Wildcard if we can make the transfers for free
+                    continue
+
             if chip_data.get('recommended', False):
                 chip_schedule[chip_name] = chip_data['best_gameweek']
 
