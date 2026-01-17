@@ -190,6 +190,26 @@ def run_long_term_optimizer(config, user_team_config, args):
 
     print(f"  - Generated predictions for GW{next_gw} through GW{next_gw + len(expected_points_by_week) - 1}")
 
+    # Debug: Show detailed prediction breakdown for elite players
+    if next_gw in expected_points_by_week:
+        print(f"\n  🔍 DEBUG - Detailed prediction breakdown for elite players (GW{next_gw}):")
+        elite_names = ['Salah', 'Haaland', 'Palmer', 'Saka']
+        for elite_name in elite_names:
+            matches = [p for p in gameweek_data.players if elite_name.lower() in p.name.lower()]
+            if matches:
+                player = matches[0]
+                detailed = forecaster.predict_points(player, num_gameweeks=1, detailed=True)
+                print(f"\n      {player.name} (£{player.price}m) - PPG={player.points_per_game:.1f}, Form={player.form:.1f}")
+                print(f"         Base PPG: {detailed['base_ppg']:.2f}")
+                print(f"         Form score: {detailed['form_score']:.2f}")
+                print(f"         Fixture mult: {detailed['fixture_mult']:.2f}x")
+                print(f"         Minutes reliability: {detailed['minutes_reliability']:.2f}")
+                print(f"         Consistency: {detailed['consistency']:.2f}")
+                print(f"         Rotation risk: {detailed['rotation_risk']:.3f}")
+                print(f"         Expected bonus: {detailed['expected_bonus']:.2f}")
+                print(f"         ➡️  FINAL: {detailed['total']:.2f} pts/GW")
+                print(f"         ⚠️  Base {detailed['base_ppg']:.2f} reduced to {detailed['total']:.2f} = {(detailed['total']/max(detailed['base_ppg'],0.01)*100):.0f}% of base")
+
     # Run long-term optimization
     print(f"\n[4/5] Running long-term optimization...")
     print("  - Optimizing transfer sequences over full horizon")
