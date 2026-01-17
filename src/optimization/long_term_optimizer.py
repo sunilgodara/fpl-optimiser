@@ -167,7 +167,8 @@ class LongTermOptimizer:
             self.current_squad,
             expected_points_by_week,
             self.chips_available,
-            horizon=horizon
+            horizon=horizon,
+            free_transfers=self.free_transfers
         )
 
         # Extract best GW for each chip (already conflict-resolved)
@@ -246,10 +247,12 @@ class LongTermOptimizer:
             List of TransferDecision for each GW
         """
         current_gw = self.data.current_gameweek
+        # Start from next unplayed gameweek (current_gw is already finished)
+        next_gw = current_gw + 1
 
         # Initialize beam with current state
         current_state = SquadState(
-            gameweek=current_gw,
+            gameweek=next_gw,  # Start from next unplayed GW, not current (finished) GW
             squad_ids=self.current_squad.copy(),
             bank=self.bank,
             free_transfers=self.free_transfers,

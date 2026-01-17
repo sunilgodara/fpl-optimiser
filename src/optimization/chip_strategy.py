@@ -127,7 +127,8 @@ class ChipStrategyOptimizer:
         self,
         current_squad: List[int],
         expected_points_by_week: Dict[int, Dict[int, float]],
-        horizon: int = 10
+        horizon: int = 10,
+        free_transfers: int = 1
     ) -> Dict[int, Dict]:
         """
         Evaluate best gameweeks to use wildcard.
@@ -198,7 +199,8 @@ class ChipStrategyOptimizer:
                     'transfer_savings': transfer_savings,
                     'dgw_bonus': dgw_bonus,
                     'is_dgw_week': gw in double_gameweeks,
-                    'recommended': total_value > 30,  # Recommend if value > 30 points
+                    # Only recommend if value > 30 AND transfers needed > available free transfers
+                    'recommended': (total_value > 30) and (transfers_needed > free_transfers),
                 }
 
         return wildcard_evaluations
@@ -518,7 +520,8 @@ class ChipStrategyOptimizer:
         current_squad: List[int],
         expected_points_by_week: Dict[int, Dict[int, float]],
         available_chips: List[str],
-        horizon: int = 10
+        horizon: int = 10,
+        free_transfers: int = 1
     ) -> Dict[str, Dict]:
         """
         Get comprehensive chip strategy recommendation with 2025/26 GW20 reset support.
@@ -586,7 +589,7 @@ class ChipStrategyOptimizer:
 
         if wildcard_available:
             wc_eval = self.evaluate_wildcard_opportunities(
-                current_squad, expected_points_by_week, effective_horizon
+                current_squad, expected_points_by_week, effective_horizon, free_transfers
             )
             if wc_eval:
                 best_wc_gw = max(wc_eval.items(), key=lambda x: x[1]['total_value'])
