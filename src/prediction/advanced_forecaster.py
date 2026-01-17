@@ -17,11 +17,13 @@ class AdvancedForecaster:
 
     # Weight factors for prediction components
     WEIGHTS = {
-        'form': 0.35,           # Recent form (last 5 games)
-        'ppg': 0.20,            # Season points per game
-        'fixture': 0.25,        # Fixture difficulty
-        'minutes': 0.10,        # Minutes played reliability
-        'consistency': 0.10,    # Performance consistency
+        # Base prediction weights (MUST sum to 1.0 for accurate predictions)
+        'form': 0.60,           # Recent form (last 5 games) - primary predictor
+        'ppg': 0.40,            # Season points per game - stability anchor
+        # Multiplier weights (applied as adjustments to base, not additive)
+        'fixture': 0.25,        # Fixture difficulty adjustment strength
+        'minutes': 0.10,        # Minutes reliability (used in formula below)
+        'consistency': 0.10,    # Performance consistency (used in formula below)
     }
 
     # Fixture difficulty multipliers (refined)

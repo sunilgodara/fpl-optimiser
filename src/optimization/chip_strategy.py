@@ -381,8 +381,9 @@ class ChipStrategyOptimizer:
             # Check if optimization succeeded and returned valid results
             if optimal and optimal.get('total_expected_points') is not None:
                 # Compare optimal vs current squad
-                current_squad_ep = sum(gw_points.get(pid, 0) for pid in current_squad) * 0.73  # Best 11 of 15
-                optimal_ep = optimal['total_expected_points'] * 0.73
+                current_squad_ep = sum(gw_points.get(pid, 0) for pid in current_squad) * 0.73  # Best 11 of 15 approx
+                # optimal['total_expected_points'] is already best 11 (from squad_optimizer fix)
+                optimal_ep = optimal['total_expected_points']
 
                 gain = optimal_ep - current_squad_ep
 
