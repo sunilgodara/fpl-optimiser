@@ -136,11 +136,14 @@ class SquadOptimizer:
             player_vars[player.id] for player in self.players
         ]) == self.SQUAD_SIZE, "Squad_Size"
 
-        # Constraint 2: Budget <= 100m
-        prob += pulp.lpSum([
+        # Constraint 2: Budget constraints
+        # Must spend between £95m and £100m (can't leave too much in bank)
+        total_cost = pulp.lpSum([
             player.price * player_vars[player.id]
             for player in self.players
-        ]) <= self.BUDGET, "Budget"
+        ])
+        prob += total_cost >= 95.0, "Min_Budget"
+        prob += total_cost <= self.BUDGET, "Max_Budget"
 
         # Constraint 3: Position requirements
         players_by_position = {
