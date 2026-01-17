@@ -387,6 +387,18 @@ class LongTermOptimizer:
 
             print(f"   Total players with predictions: {len(aggregated_ep)}")
 
+            # Debug: Show top 10 players by aggregated EP
+            if aggregated_ep:
+                from src.data.fpl_data_fetcher import FPLDataFetcher
+                data_fetcher = FPLDataFetcher()
+                player_names = {p.id: p.name for p in data_fetcher.get_all_players()}
+
+                top_players = sorted(aggregated_ep.items(), key=lambda x: x[1], reverse=True)[:10]
+                print(f"\n   Top 10 players by 5-week aggregated EP:")
+                for i, (pid, ep) in enumerate(top_players, 1):
+                    name = player_names.get(pid, f"ID:{pid}")
+                    print(f"      {i}. {name}: {ep:.1f} total pts")
+
             # Use aggregated predictions for optimization
             optimize_ep = aggregated_ep if aggregated_ep else ep_this_gw
         else:
@@ -418,6 +430,23 @@ class LongTermOptimizer:
 
         print(f"   Transfers: {len(transfers_in)} in, {len(transfers_out)} out")
         print(f"   5-week total EP: {optimal['total_expected_points']:.1f}")
+        print(f"   Squad cost: £{optimal['total_cost']:.1f}m")
+        print(f"   Bank remaining: £{optimal['remaining_budget']:.1f}m")
+
+        # Debug: Show selected squad
+        if optimal.get('squad'):
+            from src.data.fpl_data_fetcher import FPLDataFetcher
+            data_fetcher = FPLDataFetcher()
+            all_players = {p.id: p for p in data_fetcher.get_all_players()}
+
+            selected_with_ep = [(pid, optimize_ep.get(pid, 0)) for pid in optimal['squad']]
+            selected_with_ep.sort(key=lambda x: x[1], reverse=True)
+
+            print(f"\n   Selected squad (top 11 by 5-week EP):")
+            for i, (pid, ep) in enumerate(selected_with_ep[:11], 1):
+                player = all_players.get(pid)
+                if player:
+                    print(f"      {i}. {player.name} (£{player.price}m): {ep:.1f} pts")
 
         # Calculate THIS gameweek's expected points (for display)
         this_gw_ep = sum(ep_this_gw.get(pid, 0) for pid in optimal['squad'])
