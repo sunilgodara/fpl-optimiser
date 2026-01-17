@@ -179,13 +179,20 @@ class LongTermOptimizer:
 
             # Additional check for Wildcard: Don't use if we have enough free transfers
             if 'wildcard' in chip_name:
-                transfers_needed = chip_data.get('evaluations', {}).get(
-                    chip_data['best_gameweek'], {}
-                ).get('transfers_needed', 99)
+                best_gw = chip_data.get('best_gameweek')
+                evaluations = chip_data.get('evaluations', {})
 
-                if transfers_needed <= self.free_transfers:
-                    # Don't waste Wildcard if we can make the transfers for free
-                    continue
+                if best_gw and best_gw in evaluations:
+                    transfers_needed = evaluations[best_gw].get('transfers_needed', 0)
+
+                    print(f"\n🔍 DEBUG - Wildcard Check:")
+                    print(f"   Transfers needed: {transfers_needed}")
+                    print(f"   Free transfers: {self.free_transfers}")
+                    print(f"   Should skip? {transfers_needed <= self.free_transfers}")
+
+                    if transfers_needed <= self.free_transfers:
+                        print(f"   ❌ SKIPPING Wildcard (you have enough FTs)")
+                        continue
 
             if chip_data.get('recommended', False):
                 chip_schedule[chip_name] = chip_data['best_gameweek']
