@@ -203,6 +203,11 @@ class AdvancedForecaster:
         if full_games >= 4:
             reliability *= 1.1
 
+        # CRITICAL FIX: Premium players with low recent minutes (AFCON, injury)
+        # should get benefit of doubt - they'll start when available
+        if player.price >= 10.0 and reliability < 0.7:
+            reliability = max(reliability, 0.75)  # Assume they'll start most games
+
         return min(reliability, 1.0)
 
     def _get_team_form(self, team_id: int, num_games: int = 5) -> float:
