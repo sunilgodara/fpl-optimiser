@@ -397,9 +397,9 @@ class LongTermOptimizer:
                     name = player_names.get(pid, f"ID:{pid}")
                     print(f"      {i}. {name}: {ep:.1f} total pts")
 
-                # Check specific elite players
-                elite_names = ['Salah', 'Haaland', 'Palmer', 'Saka', 'Son', 'Alexander-Arnold', 'Isak']
-                print(f"\n   Elite player predictions:")
+                # Check specific elite players with detailed stats
+                elite_names = ['Salah', 'Haaland', 'Palmer', 'Saka', 'Alexander-Arnold', 'Isak']
+                print(f"\n   Elite player predictions (should be 30-35 pts over 5 GWs):")
                 for elite_name in elite_names:
                     found = False
                     for pid, ep in aggregated_ep.items():
@@ -409,7 +409,13 @@ class LongTermOptimizer:
                             player = next((p for p in self.data.players if p.id == pid), None)
                             if player:
                                 status_str = f" [{player.status}]" if player.status != 'a' else ""
-                                print(f"      {player.name} (£{player.price}m){status_str}: {ep:.1f} pts (available: {player.is_available()})")
+                                pts_per_gw = ep / WILDCARD_HORIZON
+                                expected_pts_per_gw = 6.0 if player.price >= 10.0 else 5.0
+                                shortfall = expected_pts_per_gw - pts_per_gw
+                                print(f"      {player.name} (£{player.price}m){status_str}:")
+                                print(f"         Predicted: {ep:.1f} pts ({pts_per_gw:.2f}/GW)")
+                                print(f"         FPL Stats: PPG={player.points_per_game:.1f}, Form={player.form:.1f}")
+                                print(f"         ⚠️  SHORTFALL: -{shortfall:.2f} pts/GW (should be ~{expected_pts_per_gw:.1f}/GW)")
                                 found = True
                                 break
                     if not found:
