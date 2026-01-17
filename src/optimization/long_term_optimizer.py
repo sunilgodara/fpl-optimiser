@@ -397,6 +397,24 @@ class LongTermOptimizer:
                     name = player_names.get(pid, f"ID:{pid}")
                     print(f"      {i}. {name}: {ep:.1f} total pts")
 
+                # Check specific elite players
+                elite_names = ['Salah', 'Haaland', 'Palmer', 'Saka', 'Son', 'Alexander-Arnold', 'Isak']
+                print(f"\n   Elite player predictions:")
+                for elite_name in elite_names:
+                    found = False
+                    for pid, ep in aggregated_ep.items():
+                        player_name = player_names.get(pid, "")
+                        if elite_name.lower() in player_name.lower():
+                            # Find in all players for full details
+                            player = next((p for p in self.data.players if p.id == pid), None)
+                            if player:
+                                status_str = f" [{player.status}]" if player.status != 'a' else ""
+                                print(f"      {player.name} (£{player.price}m){status_str}: {ep:.1f} pts (available: {player.is_available()})")
+                                found = True
+                                break
+                    if not found:
+                        print(f"      {elite_name}: NOT FOUND in predictions")
+
             # Use aggregated predictions for optimization
             optimize_ep = aggregated_ep if aggregated_ep else ep_this_gw
         else:
