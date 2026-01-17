@@ -341,11 +341,11 @@ class LongTermOptimizer:
         gw = state.gameweek
 
         # Handle Wildcard: Unlimited transfers (optimize for 5-week horizon)
-        if chip_this_gw == 'wildcard':
+        if chip_this_gw and 'wildcard' in chip_this_gw:
             return self._handle_wildcard_gw(state, ep_this_gw, expected_points_by_week, gw)
 
         # Handle Free Hit: Temporary squad for 1 GW
-        if chip_this_gw == 'freehit':
+        if chip_this_gw and ('freehit' in chip_this_gw or 'free_hit' in chip_this_gw):
             return self._handle_freehit_gw(state, ep_this_gw)
 
         # Regular transfers: Optimize with future context
