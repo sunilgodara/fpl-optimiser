@@ -9,6 +9,7 @@ from .prediction.advanced_forecaster import AdvancedForecaster
 from .optimization.squad_optimizer import SquadOptimizer
 from .optimization.transfer_optimizer import TransferOptimizer
 from .optimization.chip_strategy import ChipStrategyOptimizer
+from .optimization.long_term_optimizer import LongTermOptimizer, SeasonPlan
 from .utils.config import get_config, UserTeamConfig
 
 
@@ -32,7 +33,7 @@ def run_basic_optimizer(config):
     print(f"\n[2/5] Predicting player points (next {config.prediction_horizon} GWs)...")
 
     if config.use_advanced_predictions:
-        forecaster = AdvancedForecaster(gameweek_data, api_client)
+        forecaster = AdvancedForecaster(gameweek_data, api_client, use_understat=False)
         print("  - Using advanced prediction engine with historical data")
     else:
         forecaster = PointForecaster(gameweek_data)
@@ -128,6 +129,205 @@ def run_basic_optimizer(config):
     }
 
 
+def run_long_term_optimizer(config, user_team_config, args):
+    """Run long-term season optimization (maximizes cumulative points GW N→38)."""
+    print("=" * 80)
+    print("FPL OPTIMIZER - LONG-TERM SEASON PLANNING")
+    print("Maximizing cumulative points from now through GW38")
+    print("=" * 80)
+
+    # Fetch data
+    print("\n[1/5] Fetching data from FPL API...")
+    api_client = FPLAPIClient()
+    gameweek_data = build_gameweek_data(api_client)
+    next_gw = api_client.get_next_gameweek()
+    if next_gw is None:
+        next_gw = gameweek_data.current_gameweek
+
+    print(f"  - Current gameweek: {gameweek_data.current_gameweek}")
+    print(f"  - Planning from: GW{next_gw} → GW38")
+    print(f"  - Remaining gameweeks: {38 - next_gw + 1}")
+
+    # Fetch user's team
+    if user_team_config.team_id:
+        print(f"\n[2/5] Fetching your FPL team (ID: {user_team_config.team_id})...")
+        team_data = api_client.get_team_current_squad(user_team_config.team_id)
+        if team_data:
+            user_team_config.current_squad = team_data['squad']
+            user_team_config.player_values = team_data.get('player_values', {})
+
+            if args.bank is None:
+                user_team_config.bank = team_data['bank']
+            if args.free_transfers is None:
+                user_team_config.free_transfers = team_data.get('free_transfers', 1)
+
+            print(f"  - Manager: {team_data['player_name']}")
+            print(f"  - Overall Rank: {team_data['overall_rank']:,}")
+            print(f"  - Squad Value: £{team_data['squad_value']:.1f}m")
+            print(f"  - Bank: £{user_team_config.bank:.1f}m")
+            print(f"  - Free Transfers: {user_team_config.free_transfers}")
+            print(f"  - Chips Available: {', '.join(user_team_config.chips_available) or 'None'}")
+        else:
+            print("  - Could not fetch team data")
+            return None
+    else:
+        print("\n⚠️  ERROR: Long-term optimization requires --team-id parameter")
+        print("Example: python -m src.main --mode advanced --long-term --team-id 123456")
+        return None
+
+    # Generate multi-week predictions
+    print(f"\n[3/5] Generating predictions for next {config.chip_planning_horizon} gameweeks...")
+    use_understat = args.use_understat if hasattr(args, 'use_understat') else False
+    if use_understat:
+        print("  ⚠️  Understat enabled - this will take 10-15 minutes per gameweek")
+
+    # CRITICAL: Disable rotation model - it's broken (gives 58.8% rotation risk for Haaland!)
+    # Also disable xG model for speed (can enable later once rotation is fixed)
+    print("  ⚠️  Rotation model disabled (broken - assigns high rotation risk to nailed players)")
+    forecaster = AdvancedForecaster(
+        gameweek_data,
+        api_client,
+        use_understat=use_understat,
+        use_rotation_model=False,  # DISABLED - broken
+        use_xg_model=False  # DISABLED for speed
+    )
+
+    expected_points_by_week = {}
+    for gw_offset in range(min(config.chip_planning_horizon, 38 - next_gw + 1)):
+        gw = next_gw + gw_offset
+        ep = forecaster.get_predictions_for_all_players(num_gameweeks=1)
+        expected_points_by_week[gw] = ep
+
+    print(f"  - Generated predictions for GW{next_gw} through GW{next_gw + len(expected_points_by_week) - 1}")
+
+    # Debug: Show detailed prediction breakdown for elite players
+    if next_gw in expected_points_by_week:
+        print(f"\n  🔍 DEBUG - Detailed prediction breakdown for elite players (GW{next_gw}):")
+        elite_names = ['Salah', 'Haaland', 'Palmer', 'Saka']
+        for elite_name in elite_names:
+            matches = [p for p in gameweek_data.players if elite_name.lower() in p.name.lower()]
+            if matches:
+                player = matches[0]
+                detailed = forecaster.predict_points(player, num_gameweeks=1, detailed=True)
+                print(f"\n      {player.name} (£{player.price}m) - PPG={player.points_per_game:.1f}, Form={player.form:.1f}")
+                print(f"         Base PPG: {detailed['base_ppg']:.2f}")
+                print(f"         Form score: {detailed['form_score']:.2f}")
+                print(f"         Fixture mult: {detailed['fixture_mult']:.2f}x")
+                print(f"         Minutes reliability: {detailed['minutes_reliability']:.2f}")
+                print(f"         Consistency: {detailed['consistency']:.2f}")
+                print(f"         Rotation risk: {detailed['rotation_risk']:.3f}")
+                print(f"         Expected bonus: {detailed['expected_bonus']:.2f}")
+                print(f"         ➡️  FINAL: {detailed['total']:.2f} pts/GW")
+                print(f"         ⚠️  Base {detailed['base_ppg']:.2f} reduced to {detailed['total']:.2f} = {(detailed['total']/max(detailed['base_ppg'],0.01)*100):.0f}% of base")
+
+    # Run long-term optimization
+    print(f"\n[4/5] Running long-term optimization...")
+    print("  - Optimizing transfer sequences over full horizon")
+    print("  - Finding globally optimal chip timing")
+    print("  - Considering future fixtures and form trends")
+
+    long_term_opt = LongTermOptimizer(
+        gameweek_data=gameweek_data,
+        current_squad=user_team_config.current_squad,
+        bank=user_team_config.bank,
+        free_transfers=user_team_config.free_transfers,
+        chips_available=user_team_config.chips_available
+    )
+
+    # Use the actual number of gameweeks we have predictions for
+    # (don't plan beyond what we've predicted)
+    actual_horizon = len(expected_points_by_week)
+
+    season_plan = long_term_opt.optimize_season(
+        expected_points_by_week=expected_points_by_week,
+        horizon=actual_horizon,  # Plan based on available predictions
+        strategy='cumulative_points'
+    )
+
+    print(f"  ✓ Optimization complete!")
+
+    # Display results
+    print(f"\n[5/5] Season Plan Results:")
+    print("=" * 80)
+    print(season_plan.reasoning)
+    print("=" * 80)
+
+    # Show immediate action (next GW)
+    if season_plan.decisions:
+        next_decision = season_plan.decisions[0]
+        print(f"\n🎯 IMMEDIATE ACTION FOR GW{next_decision.gameweek}:")
+        print("-" * 80)
+
+        if next_decision.chip_used:
+            chip_display = {
+                'wildcard': '🃏 WILDCARD',
+                'freehit': '⚡ FREE HIT',
+                'bboost': '💪 BENCH BOOST',
+                '3xc': '👑 TRIPLE CAPTAIN'
+            }.get(next_decision.chip_used, next_decision.chip_used.upper())
+            print(f"  Chip: {chip_display}")
+
+        if next_decision.transfers_in:
+            print(f"\n  Transfers ({len(next_decision.transfers_in)}):")
+            for i, (out_id, in_id) in enumerate(zip(next_decision.transfers_out, next_decision.transfers_in), 1):
+                out_player = gameweek_data.get_player_by_id(out_id)
+                in_player = gameweek_data.get_player_by_id(in_id)
+                print(f"    {i}. OUT: {out_player.name:20} → IN: {in_player.name:20}")
+
+            if next_decision.hits_taken > 0:
+                print(f"\n  Cost: {next_decision.hits_taken} hit(s) = -{next_decision.hits_taken * 4} points")
+        else:
+            print("  No transfers recommended - hold your free transfer")
+
+        print(f"\n  Expected Points: {next_decision.expected_points:.1f}")
+        print(f"  Bank After: £{next_decision.bank_after:.1f}m")
+        print(f"  Free Transfers Next Week: {next_decision.free_transfers_after}")
+
+    # Detailed gameweek breakdown
+    print(f"\n\n📅 DETAILED GAMEWEEK PLAN:")
+    print("=" * 80)
+
+    for i, decision in enumerate(season_plan.decisions[:10], 1):  # Show first 10 GWs
+        print(f"\nGW{decision.gameweek}:")
+
+        if decision.chip_used:
+            chip_name = decision.chip_used.upper().replace('BBOOST', 'BENCH BOOST').replace('3XC', 'TRIPLE CAPTAIN')
+            print(f"  Chip: {chip_name}")
+
+        if decision.transfers_in:
+            print(f"  Transfers: {len(decision.transfers_in)} player(s)")
+            if decision.hits_taken > 0:
+                print(f"  Hits: -{decision.hits_taken * 4} points")
+        else:
+            print(f"  Transfers: None (banking FT)")
+
+        print(f"  Expected Points: {decision.expected_points:.1f}")
+        print(f"  Bank: £{decision.bank_after:.1f}m | FTs Next: {decision.free_transfers_after}")
+
+    if len(season_plan.decisions) > 10:
+        print(f"\n  ... (+ {len(season_plan.decisions) - 10} more gameweeks in plan)")
+
+    # Summary stats
+    print(f"\n\n📊 SEASON PLAN SUMMARY:")
+    print("=" * 80)
+    print(f"  Total Expected Points: {season_plan.total_expected_points:.1f}")
+    print(f"  Total Transfer Hits: {season_plan.total_transfer_cost} hits (- {season_plan.total_transfer_cost} points)")
+    print(f"  Net Expected Points: {season_plan.net_expected_points:.1f}")
+    print(f"  Average Points/GW: {season_plan.net_expected_points / len(season_plan.decisions):.1f}")
+
+    if season_plan.chip_schedule:
+        print(f"\n  Chips Scheduled:")
+        for chip, gw in sorted(season_plan.chip_schedule.items(), key=lambda x: x[1]):
+            chip_display = chip.replace('_', ' ').title()
+            print(f"    - GW{gw}: {chip_display}")
+
+    print("\n" + "=" * 80)
+    print("Long-term optimization complete!")
+    print("=" * 80)
+
+    return season_plan
+
+
 def run_advanced_optimizer(config, user_team_config, args):
     """Run advanced optimization with transfers and chip strategy."""
     print("=" * 80)
@@ -200,7 +400,10 @@ def run_advanced_optimizer(config, user_team_config, args):
 
     # Advanced predictions
     print(f"\n[{'3' if user_team_config.team_id else '2'}/6] Generating advanced predictions...")
-    forecaster = AdvancedForecaster(gameweek_data, api_client)
+    use_understat = args.use_understat if hasattr(args, 'use_understat') else False
+    if use_understat:
+        print("  ⚠️  Understat enabled - this will take 10-15 minutes per gameweek")
+    forecaster = AdvancedForecaster(gameweek_data, api_client, use_understat=use_understat)
 
     # Generate predictions for multiple gameweeks starting from next gameweek
     expected_points_by_week = {}
@@ -534,6 +737,16 @@ def main():
         type=float,
         help='Money in bank in millions (e.g., 1.8 for £1.8m)'
     )
+    parser.add_argument(
+        '--long-term',
+        action='store_true',
+        help='Enable long-term season optimization (GW N→38 planning)'
+    )
+    parser.add_argument(
+        '--use-understat',
+        action='store_true',
+        help='Enable real xG data from Understat (slower but more accurate, adds ~10-15 min)'
+    )
 
     args = parser.parse_args()
 
@@ -550,7 +763,11 @@ def main():
     # Run optimizer
     if args.mode == 'basic':
         run_basic_optimizer(config)
+    elif args.long_term:
+        # Long-term season optimization mode
+        run_long_term_optimizer(config, user_team_config, args)
     else:
+        # Standard advanced mode
         run_advanced_optimizer(config, user_team_config, args)
 
 

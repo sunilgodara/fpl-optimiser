@@ -136,11 +136,14 @@ class SquadOptimizer:
             player_vars[player.id] for player in self.players
         ]) == self.SQUAD_SIZE, "Squad_Size"
 
-        # Constraint 2: Budget <= 100m
-        prob += pulp.lpSum([
+        # Constraint 2: Budget constraints
+        # Must spend between £95m and £100m (can't leave too much in bank)
+        total_cost = pulp.lpSum([
             player.price * player_vars[player.id]
             for player in self.players
-        ]) <= self.BUDGET, "Budget"
+        ])
+        prob += total_cost >= 95.0, "Min_Budget"
+        prob += total_cost <= self.BUDGET, "Max_Budget"
 
         # Constraint 3: Position requirements
         players_by_position = {
@@ -189,7 +192,14 @@ class SquadOptimizer:
             if player_vars[player.id].varValue == 1
         ]
 
-        total_points = pulp.value(prob.objective)
+        # Calculate ACTUAL expected points (best 11 of 15)
+        # NOT the weighted LP objective which uses bench_weight=0.1x
+        squad_actual_points = sorted(
+            [expected_points.get(pid, 0) for pid in selected_player_ids],
+            reverse=True
+        )[:11]  # Best 11 players
+        total_points = sum(squad_actual_points)
+
         total_cost = sum(
             self.data.get_player_by_id(pid).price
             for pid in selected_player_ids
@@ -197,13 +207,14 @@ class SquadOptimizer:
 
         if verbose:
             print(f"\nSquad optimized successfully!")
-            print(f"Total expected points: {total_points:.2f}")
+            print(f"Total expected points (best 11): {total_points:.2f}")
             print(f"Total cost: £{total_cost:.1f}m")
 
         return {
             'squad': selected_player_ids,
             'total_expected_points': total_points,
-            'total_cost': total_cost
+            'total_cost': total_cost,
+            'remaining_budget': self.BUDGET - total_cost
         }
 
     def optimize_starting_xi(
